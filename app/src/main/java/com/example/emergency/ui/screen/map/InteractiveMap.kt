@@ -102,6 +102,12 @@ import java.net.URL
 import kotlin.coroutines.resume
 
 private const val TAG = "InteractiveMap"
+
+// Bump whenever app/src/main/assets/pois-nl.geojson changes. The first launch
+// after an upgrade will overwrite the cached copy in filesDir; otherwise the
+// device keeps showing whatever was bundled at install time.
+private const val POI_BUNDLE_VERSION = 2
+
 private val DAM_SQUARE = LatLng(52.3731, 4.8926)
 
 // PDOK basemap only covers the Netherlands; outside this bbox we keep the
@@ -491,11 +497,20 @@ private fun addPoiLayer(context: Context, style: Style) {
     Thread {
         try {
             val outFile = java.io.File(context.filesDir, "pois-nl.geojson")
-            if (!outFile.exists()) {
-                Log.d(TAG, "Copying pois-nl.geojson from assets…")
+            val versionFile = java.io.File(context.filesDir, "pois-nl.version")
+            val cachedVersion = versionFile.takeIf { it.exists() }
+                ?.runCatching { readText().trim().toInt() }?.getOrNull() ?: -1
+            val needsCopy = !outFile.exists() || cachedVersion != POI_BUNDLE_VERSION
+            if (needsCopy) {
+                Log.d(
+                    TAG,
+                    "Copying pois-nl.geojson from assets (cached=$cachedVersion, " +
+                        "current=$POI_BUNDLE_VERSION)…",
+                )
                 context.assets.open("pois-nl.geojson").use { input ->
                     outFile.outputStream().use { output -> input.copyTo(output) }
                 }
+                versionFile.writeText(POI_BUNDLE_VERSION.toString())
                 Log.d(TAG, "Copied pois-nl.geojson (${outFile.length() / 1024} KB) to ${outFile.absolutePath}")
             } else {
                 Log.d(TAG, "Reusing existing pois-nl.geojson (${outFile.length() / 1024} KB)")
