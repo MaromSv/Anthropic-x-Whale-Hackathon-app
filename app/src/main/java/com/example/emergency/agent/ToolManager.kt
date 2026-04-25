@@ -2,6 +2,7 @@ package com.example.emergency.agent
 
 import android.content.Context
 import com.example.emergency.agent.tools.CprTool
+import com.example.emergency.agent.tools.FindNearestTool
 import com.example.emergency.agent.tools.GpsLocationTool
 import com.example.emergency.agent.tools.MedicalRagTool
 
@@ -17,6 +18,7 @@ class ToolManager(context: Context) {
             GpsLocationTool(context).getTool(),
             MedicalRagTool(context).getTool(),
             CprTool().getTool(),
+            FindNearestTool(context).getTool(),
         )
         
         tools = toolList.associateBy { it.name }
@@ -42,6 +44,10 @@ class ToolManager(context: Context) {
             appendLine("   Example: User says 'she is unresponsive' → IMMEDIATELY call cpr_instructions\n")
             appendLine("3. **get_location** - ONLY call if user explicitly asks for GPS coordinates or location")
             appendLine("   Do NOT use for medical questions\n")
+            appendLine("4. **find_nearest** - Call when the user asks for the NEAREST place of a specific kind:")
+            appendLine("   - 'nearest hospital', 'closest pharmacy', 'where can I find an AED', 'nearest police station', etc.")
+            appendLine("   Required param: category (hospital, doctor, first_aid, aed, pharmacy, police, fire, shelter, water, toilet, fuel, supermarket, atm, phone, school, metro)")
+            appendLine("   Example: User says 'I need an AED' → call find_nearest with category=aed\n")
             
             appendLine("**CRITICAL: Always call tools FIRST, then use the tool output to give your advice. Never give medical advice without calling the appropriate tool.**\n")
             

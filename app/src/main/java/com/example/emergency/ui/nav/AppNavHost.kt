@@ -386,8 +386,9 @@ fun AppNavHost() {
                 pendingImages = pendingImages,
                 onRemoveImage = { path -> onRemoveImage(path) },
                 onOpenTool = { name ->
-                    if (name == "cpr_instructions") {
-                        navController.navigate(Route.CprWalkthrough.path)
+                    when (name) {
+                        "cpr_instructions" -> navController.navigate(Route.CprWalkthrough.path)
+                        "find_nearest" -> navController.navigate(Route.Map.path)
                     }
                 },
             )

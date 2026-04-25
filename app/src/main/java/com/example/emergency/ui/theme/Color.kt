@@ -59,6 +59,8 @@ data class SemanticColors(
     val statusOk: Color,
     val badgeNew: Color,
     val badgeNewInk: Color,
+    val mapToolBg: Color,
+    val mapToolInk: Color,
 )
 
 val LightSemanticColors = SemanticColors(
@@ -74,6 +76,8 @@ val LightSemanticColors = SemanticColors(
     statusOk = Color(0xFF16A34A),
     badgeNew = Color(0xFFC2410C),
     badgeNewInk = Color(0xFFFFFFFF),
+    mapToolBg = Color(0xFFDDEFE9),
+    mapToolInk = Color(0xFF0F766E),
 )
 
 val LocalSemanticColors = staticCompositionLocalOf { LightSemanticColors }

@@ -44,6 +44,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.example.emergency.ui.screen.chat.ChatInputBar
 import com.example.emergency.ui.screen.chat.CprWalkthroughCard
+import com.example.emergency.ui.screen.chat.MapToolCard
+import org.json.JSONObject
 import com.example.emergency.ui.screen.common.SubScreenTopBar
 import com.example.emergency.ui.state.ChatRole
 import com.example.emergency.ui.state.ChatThreadUiState
@@ -120,10 +122,18 @@ fun ChatThreadScreen(
                         }
                         ChatRole.TOOL -> {
                             val toolCall = message.toolCall!!
-                            if (toolCall.toolName == "cpr_instructions" && toolCall.status == "success") {
-                                CprWalkthroughCard(onClick = { onOpenTool(toolCall.toolName) })
-                            } else {
-                                ToolCallBubble(toolCall = toolCall)
+                            when {
+                                toolCall.toolName == "cpr_instructions" && toolCall.status == "success" ->
+                                    CprWalkthroughCard(onClick = { onOpenTool(toolCall.toolName) })
+                                toolCall.toolName == "find_nearest" && toolCall.status == "success" -> {
+                                    val title = parseFindNearestTitle(toolCall.result)
+                                    if (title != null) {
+                                        MapToolCard(title = title, onClick = { onOpenTool(toolCall.toolName) })
+                                    } else {
+                                        ToolCallBubble(toolCall = toolCall)
+                                    }
+                                }
+                                else -> ToolCallBubble(toolCall = toolCall)
                             }
                         }
                     }
@@ -346,4 +356,29 @@ private fun ToolCallBubble(toolCall: ToolCallInfo) {
             }
         }
     }
+}
+
+private fun parseFindNearestTitle(raw: String): String? {
+    val trimmed = raw.trim().removeSuffix("...")
+    if (!trimmed.startsWith("{")) return null
+    return runCatching {
+        val obj = JSONObject(trimmed)
+        val name = obj.optString("name").takeIf { it.isNotBlank() }
+        val category = obj.optString("category").takeIf { it.isNotBlank() }
+        val pretty = category?.let { categoryLabel(it) }
+        when {
+            name != null && pretty != null && !name.equals(pretty, ignoreCase = true) -> "$pretty \u00B7 $name"
+            name != null -> name
+            pretty != null -> pretty
+            else -> null
+        }
+    }.getOrNull()
+}
+
+private fun categoryLabel(category: String): String = when (category) {
+    "first_aid" -> "Medical post"
+    "aed" -> "AED"
+    "atm" -> "ATM"
+    "parking_underground" -> "Parking"
+    else -> category.replace('_', ' ').replaceFirstChar { it.uppercase() }
 }
