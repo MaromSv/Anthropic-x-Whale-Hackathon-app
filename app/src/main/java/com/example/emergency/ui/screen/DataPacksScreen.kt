@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -291,6 +292,8 @@ private fun PackRow(
                 text = pack.name,
                 style = typography.listItem.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium),
                 color = colors.text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Spacer(modifier = Modifier.height(2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -299,6 +302,9 @@ private fun PackRow(
                         text = it,
                         style = typography.helper.copy(fontSize = 12.sp),
                         color = colors.textDim,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
                     DotSeparator()
                 }
@@ -306,6 +312,8 @@ private fun PackRow(
                     text = pack.sizeLabel,
                     style = typography.monoMicro.copy(fontSize = 12.sp),
                     color = colors.textDim,
+                    maxLines = 1,
+                    softWrap = false,
                 )
             }
         }
