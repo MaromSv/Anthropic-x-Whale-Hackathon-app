@@ -1,0 +1,45 @@
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.example.gemmachatbot.core'
+    compileSdk rootProject.ext.compileSdkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+
+    defaultConfig {
+        minSdk rootProject.ext.minSdkVersion
+        consumerProguardFiles 'consumer-rules.pro'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    packaging {
+        // litertlm ships native .so libs that must NOT be compressed.
+        jniLibs {
+            useLegacyPackaging false
+        }
+    }
+}
+
+dependencies {
+    // FileProvider for camera capture path handoff.
+    implementation 'androidx.core:core-ktx:1.13.1'
+
+    // ViewModel / AndroidViewModel for the chat state holder.
+    api 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7'
+
+    // Coroutines + Flow are part of the public streaming API.
+    api 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
+
+    // LiteRT-LM Android: on-device Gemma runtime (.litertlm bundles).
+    api 'com.google.ai.edge.litertlm:litertlm-android:0.10.2'
+}

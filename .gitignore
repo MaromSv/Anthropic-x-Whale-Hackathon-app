@@ -1,0 +1,25 @@
+# Android / Gradle
+**/build/
+**/.gradle/
+android/local.properties
+android/app/release/
+*.keystore
+!android/app/debug.keystore
+
+# Models (too large for git, push via adb)
+*.litertlm
+*.task
+*.bin
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node / Expo legacy (keep ignoring)
+node_modules/
+.expo/
