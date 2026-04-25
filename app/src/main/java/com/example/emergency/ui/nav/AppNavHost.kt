@@ -213,14 +213,23 @@ fun AppNavHost() {
                 if (gemma.isLoaded) {
                     var fullResponse = ""
                     
-                    // Stream the initial response
+                    // Stream the initial response. Keep the full text (including any
+                    // <tool_call> XML the LLM emits) in fullResponse for the parser, but
+                    // strip anything from the first '<' onward before showing it in the
+                    // chat bubble so the user never sees raw XML.
                     withContext(Dispatchers.IO) {
                         gemma.generateStreamingWithImages(text, images).collect { token ->
                             fullResponse += token
+                            val ltIdx = fullResponse.indexOf('<')
+                            val displayText = if (ltIdx >= 0) {
+                                fullResponse.substring(0, ltIdx).trim()
+                            } else {
+                                fullResponse
+                            }
                             val idx = threadMessages.indexOfFirst { it.id == assistantId }
                             if (idx >= 0) {
                                 val current = threadMessages[idx]
-                                threadMessages[idx] = current.copy(text = fullResponse)
+                                threadMessages[idx] = current.copy(text = displayText)
                             }
                         }
                     }
@@ -270,18 +279,24 @@ fun AppNavHost() {
                                 )
                             }
                             
-                            // Generate follow-up response with tool result
-                            val followUpPrompt = "Tool ${toolCall.toolName} returned: ${result.data}\n\nBased on this information, provide your response to the user."
-                            
-                            // Clear previous assistant message and stream new response
+                            // Strip the <tool_call> block from the original assistant
+                            // bubble so any pre-tool preamble (if present) stays clean.
                             val assistantIdx = threadMessages.indexOfFirst { it.id == assistantId }
                             if (assistantIdx >= 0) {
                                 threadMessages[assistantIdx] = threadMessages[assistantIdx].copy(
                                     text = toolManager.removeToolCallBlocks(fullResponse)
                                 )
                             }
-                            
-                            // Add new assistant message for tool-based response
+
+                            // CPR is fully handled by the walkthrough card — no follow-up
+                            // LLM response needed (and a second bubble would be confusing).
+                            if (toolCall.toolName == "cpr_instructions") {
+                                continue
+                            }
+
+                            // For other tools, generate a follow-up response from the result.
+                            val followUpPrompt = "The user asked: \"$text\"\n\nTool ${toolCall.toolName} returned:\n${result.data}\n\nUsing this and your system instructions, give the user the final brief, numbered answer."
+
                             val newAssistantIndex = threadMessages.size
                             val newAssistantId = "a$newAssistantIndex"
                             threadMessages.add(
@@ -292,7 +307,7 @@ fun AppNavHost() {
                                     timestampLabel = "now",
                                 )
                             )
-                            
+
                             var toolResponse = ""
                             withContext(Dispatchers.IO) {
                                 gemma.generateStreaming(followUpPrompt).collect { token ->
@@ -446,39 +461,47 @@ fun AppNavHost() {
 
 private fun buildSystemPrompt(toolManager: ToolManager): String {
     return """
-You are an emergency medical assistant AI that provides concise, step-by-step advice in urgent medical situations. Your responses must be brief, focused on essential actions, and suitable for laypeople. Always advise calling emergency services if the situation may be life-threatening.
+You are an emergency medical assistant. Your job is to call the correct tool and then return a brief, numbered answer for a layperson.
 
 ${toolManager.getToolDescriptions()}
 
-**Critical Guidelines:**
-- Keep responses extremely brief (maximum 2-3 concise steps, each ≤20 words)
-- Use numbered bullets for clarity
-- Before offering actions, assess symptoms, risk level, and urgency
-- ALWAYS use tools when they would be helpful:
-  - Use get_location when the user needs emergency services or their location
-  - Use search_medical_database when you need medical protocols or treatment information
-  - Use cpr_instructions when someone needs CPR guidance
-- Do NOT provide lengthy explanations or medical jargon
-- If life-threatening, immediately advise to call emergency services
+**How to choose a tool:**
+- Image of a wound, cut, severe bleeding, or any tourniquet question → call `search_medical_database` with `query=tourniquet`.
+- Anything mentioning CPR, unresponsive, not breathing, no pulse, cardiac arrest → call `cpr_instructions` (no parameters).
+- Asking to hide, find a shelter, reach safety, or get directions to a safe place → call `get_location` with `destination=nearest shelter`.
 
-**Example interactions:**
-User: "Someone collapsed and isn't breathing"
-Assistant: 
+**Output rules:**
+- Your FIRST response to the user must be the `<tool_call>` block — nothing before it, nothing after it.
+- After the tool returns, reply with a numbered list (max 6 short steps, ≤20 words each). No preamble, no medical jargon.
+
+**Examples:**
+
+User: "I need CPR guidance"
+Assistant:
 <tool_call>
 cpr_instructions
 </tool_call>
 
-User: "Where am I? I need an ambulance"
+User: "Where is the nearest shelter I can hide at?"
 Assistant:
 <tool_call>
 get_location
+destination=nearest shelter
 </tool_call>
 
-User: "How do I treat a severe burn?"
+User: "[image of bleeding wound] how do I apply a tourniquet?"
 Assistant:
 <tool_call>
 search_medical_database
-query=burn treatment
+query=tourniquet
 </tool_call>
+
+After the search_medical_database tool returns, your final answer for the tourniquet case should be exactly:
+1. Expose the wound — remove or cut clothing so the bleeding is clearly visible.
+2. Place the tourniquet 5–7 cm above the wound, between the wound and the heart.
+3. Tighten firmly — pull the strap as tight as possible and secure it. Goal: stop blood flow completely.
+4. Twist the windlass (if present) until bleeding stops. Expect significant pain.
+5. Note the time of application — write it on the patient's skin if possible.
+6. Do not loosen or remove — leave in place until medical professionals take over.
     """.trimIndent()
 }

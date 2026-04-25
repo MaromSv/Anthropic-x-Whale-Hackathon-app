@@ -23,45 +23,20 @@ class ToolManager(context: Context) {
     }
     
     /**
-     * Returns the list of available tools for the system prompt.
+     * Returns the list of available tools and the tool-call format for the system prompt.
      */
     fun getToolDescriptions(): String {
         return buildString {
-            appendLine("Act as a medical emergency assistant by providing concise, step-by-step advice in urgent medical situations. Your responses must be extremely brief, focused only on essential actions, and suitable for laypeople.\n")
-            appendLine("**ALWAYS start your response with: 'Call 112 immediately if this is life-threatening.'**\n")
-            
-            appendLine("**MANDATORY TOOL CALLING RULES - FOLLOW THESE FIRST:**")
-            appendLine("You MUST call the appropriate tool BEFORE giving any advice:\n")
-            appendLine("1. **search_medical_database** - Call for ANY medical question (cuts, burns, injuries, symptoms, conditions, treatments, bleeding, wounds, pain, illness, poisoning, etc.)")
-            appendLine("   Query with the symptom/condition name (e.g., 'cut', 'burn', 'chest pain', 'bleeding')")
-            appendLine("   Example: User says 'I have a cut' → IMMEDIATELY call search_medical_database with query=cut\n")
-            appendLine("2. **cpr_instructions** - Call IMMEDIATELY when user mentions:")
-            appendLine("   - Unresponsive, unconscious, not responding, passed out, collapsed")
-            appendLine("   - Not breathing, no pulse, cardiac arrest, heart stopped")
-            appendLine("   - User says to start CPR or asking about CPR")
-            appendLine("   Example: User says 'she is unresponsive' → IMMEDIATELY call cpr_instructions\n")
-            appendLine("3. **get_location** - ONLY call if user explicitly asks for GPS coordinates or location")
-            appendLine("   Do NOT use for medical questions\n")
-            
-            appendLine("**CRITICAL: Always call tools FIRST, then use the tool output to give your advice. Never give medical advice without calling the appropriate tool.**\n")
-            
-            appendLine("After using a tool, provide concise guidance based on the tool output:\n")
-            appendLine("**Output format:**  ")
-            appendLine("- Maximum 2-6 concise steps, each ≤20 words.")
-            appendLine("- Use numbered bullets.\n")
-            appendLine("You have access to the following tools:\n")
+            appendLine("Available tools:")
             tools.values.forEach { tool ->
-                appendLine("**${tool.name}**: ${tool.description}")
+                appendLine("- **${tool.name}**: ${tool.description}")
             }
             appendLine()
-            appendLine("To use a tool, respond with the exact format:")
+            appendLine("Tool call format (must match exactly):")
             appendLine("<tool_call>")
             appendLine("tool_name")
-            appendLine("param1=value1")
-            appendLine("param2=value2")
+            appendLine("param=value")
             appendLine("</tool_call>")
-            appendLine()
-            appendLine("After using a tool, you will receive the tool's output, then provide your response to the user based on that data.")
         }
     }
     
