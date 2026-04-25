@@ -39,6 +39,7 @@ import com.example.emergency.ui.screen.HomeShell
 import com.example.emergency.ui.screen.MapScreen
 import com.example.emergency.ui.screen.PersonalInfoScreen
 import com.example.emergency.ui.screen.SettingsScreen
+import com.example.emergency.ui.screen.cpr.CprWalkthroughScreen
 import com.example.emergency.ui.state.ChatMessage
 import com.example.emergency.ui.state.ChatRole
 import com.example.emergency.ui.state.ChatThreadUiState
@@ -379,6 +380,11 @@ fun AppNavHost() {
                 onCamera = { onCamera() },
                 pendingImages = pendingImages,
                 onRemoveImage = { path -> onRemoveImage(path) },
+                onOpenTool = { name ->
+                    if (name == "cpr_instructions") {
+                        navController.navigate(Route.CprWalkthrough.path)
+                    }
+                },
             )
         }
         composable(Route.DataPacks.path) {
@@ -416,7 +422,11 @@ fun AppNavHost() {
             AbcCheckScreen(
                 state = SampleAbcCheckUiState,
                 onBack = { navController.popBackStack() },
+                onStartCpr = { navController.navigate(Route.CprWalkthrough.path) },
             )
+        }
+        composable(Route.CprWalkthrough.path) {
+            CprWalkthroughScreen(onBack = { navController.popBackStack() })
         }
         composable(Route.GetOut.path) {
             GetOutScreen(
