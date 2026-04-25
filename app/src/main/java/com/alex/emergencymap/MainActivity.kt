@@ -1,19 +1,26 @@
 package com.alex.emergencymap
 
-import android.graphics.Color
+import android.graphics.RectF
 import android.os.Bundle
 import android.util.Log
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
@@ -22,6 +29,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.alex.emergencymap.ui.theme.EmergencyMapTheme
 import com.mapbox.geojson.Feature
 import com.mapbox.geojson.FeatureCollection
+import com.mapbox.geojson.LineString
 import com.mapbox.geojson.Point
 import com.mapbox.mapboxsdk.Mapbox
 import com.mapbox.mapboxsdk.WellKnownTileServer
@@ -32,10 +40,18 @@ import com.mapbox.mapboxsdk.maps.MapboxMapOptions
 import com.mapbox.mapboxsdk.maps.Style
 import com.mapbox.mapboxsdk.style.expressions.Expression
 import com.mapbox.mapboxsdk.style.layers.CircleLayer
+import com.mapbox.mapboxsdk.style.layers.LineLayer
 import com.mapbox.mapboxsdk.style.layers.PropertyFactory
 import com.mapbox.mapboxsdk.style.sources.GeoJsonSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 private const val TAG = "EmergencyMap"
+private val DAM_SQUARE = LatLng(52.3731, 4.8926)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,6 +68,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MapScreen() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
 
     val mapView = remember {
         val options = MapboxMapOptions.createFromAttributes(context).textureMode(true)
@@ -79,28 +97,53 @@ fun MapScreen() {
         }
     }
 
+    var routeSource by remember { mutableStateOf<GeoJsonSource?>(null) }
+
     LaunchedEffect(mapView) {
-        Log.d(TAG, "LaunchedEffect: requesting map")
         mapView.getMapAsync { map ->
-            Log.d(TAG, "getMapAsync callback: map ready, setting camera + style")
             map.cameraPosition = CameraPosition.Builder()
                 .target(LatLng(52.3676, 4.9041))
                 .zoom(13.0)
                 .build()
             map.setStyle(Style.Builder().fromJson(PDOK_BRT_STYLE)) { style ->
-                Log.d(TAG, "Style loaded, layers=${style.layers.size}, sources=${style.sources.size}")
+                Log.d(TAG, "Style loaded")
                 addPoiLayer(style)
+                routeSource = addRouteLayer(style)
             }
-        }
-        mapView.addOnDidFailLoadingMapListener { msg ->
-            Log.e(TAG, "Map failed to load: $msg")
-        }
-        mapView.addOnDidFinishLoadingMapListener {
-            Log.d(TAG, "Map FULLY loaded (style + visible tiles all done)")
+
+            map.addOnMapClickListener { latLng ->
+                val pt = map.projection.toScreenLocation(latLng)
+                val touchRect = RectF(pt.x - 30, pt.y - 30, pt.x + 30, pt.y + 30)
+                val hits = map.queryRenderedFeatures(touchRect, "pois-layer")
+                if (hits.isNotEmpty()) {
+                    val f = hits[0]
+                    val name = f.getStringProperty("name") ?: "POI"
+                    val coord = f.geometry() as Point
+                    Log.d(TAG, "Tapped POI: $name")
+                    scope.launch {
+                        snackbar.showSnackbar("Routing to: $name")
+                        val route = osrmWalkRoute(
+                            DAM_SQUARE,
+                            LatLng(coord.latitude(), coord.longitude())
+                        )
+                        if (route != null && route.size > 1) {
+                            val pts = route.map { Point.fromLngLat(it.longitude, it.latitude) }
+                            routeSource?.setGeoJson(LineString.fromLngLats(pts))
+                        } else {
+                            snackbar.showSnackbar("Routing failed (check internet)")
+                        }
+                    }
+                    true
+                } else false
+            }
         }
     }
 
-    AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
+    Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { innerPadding ->
+        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
+        }
+    }
 }
 
 private data class Poi(val name: String, val category: String, val lat: Double, val lon: Double)
@@ -138,6 +181,46 @@ private fun addPoiLayer(style: Style) {
         )
     )
 }
+
+private fun addRouteLayer(style: Style): GeoJsonSource {
+    val source = GeoJsonSource("route-source")
+    style.addSource(source)
+    // Insert the route line BELOW the POI dots so the dots stay on top.
+    style.addLayerBelow(
+        LineLayer("route-layer", "route-source").withProperties(
+            PropertyFactory.lineColor("#1E88E5"),
+            PropertyFactory.lineWidth(5f),
+            PropertyFactory.lineOpacity(0.85f),
+        ),
+        "pois-layer"
+    )
+    return source
+}
+
+private suspend fun osrmWalkRoute(from: LatLng, to: LatLng): List<LatLng>? =
+    withContext(Dispatchers.IO) {
+        try {
+            val url = URL(
+                "https://router.project-osrm.org/route/v1/foot/" +
+                "${from.longitude},${from.latitude};${to.longitude},${to.latitude}" +
+                "?overview=full&geometries=geojson"
+            )
+            val conn = url.openConnection() as HttpURLConnection
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 10_000
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            val coords = JSONObject(body)
+                .getJSONArray("routes").getJSONObject(0)
+                .getJSONObject("geometry").getJSONArray("coordinates")
+            (0 until coords.length()).map {
+                val pt = coords.getJSONArray(it)
+                LatLng(pt.getDouble(1), pt.getDouble(0))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "OSRM failed", e)
+            null
+        }
+    }
 
 private const val PDOK_BRT_STYLE = """
 {
