@@ -23,10 +23,10 @@ class MedicalRagTool(private val context: Context) {
     
     fun getTool(): Tool = Tool(
         name = "search_medical_database",
-        description = "Searches medical database for SYMPTOMS, CONDITIONS, or TREATMENTS only. Query with medical terms (e.g., 'burn treatment', 'chest pain', 'bleeding'). NEVER use for location queries.",
+        description = "Retrieves medical protocols for symptoms, wounds, injuries, or treatments. Required param: query (e.g., 'tourniquet', 'burn', 'chest pain'). Use for any medical question, including image-based wound assessment.",
         execute = ::execute,
     )
-    
+
     init {
         loadMedicalDatabase()
     }

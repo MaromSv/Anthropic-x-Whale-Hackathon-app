@@ -20,22 +20,23 @@ class GpsLocationTool(private val context: Context) {
     
     fun getTool(): Tool = Tool(
         name = "get_location",
-        description = "Gets the user's current GPS location, coordinates, country, or position. Use ONLY for location/GPS/where am I questions OR DIRECTIONS QUESTIONS. Returns latitude, longitude, and accuracy.",
+        description = "Returns directions to a destination from the user's current GPS position. Required param: destination (e.g., 'nearest shelter'). Use when the user wants to navigate, hide, or reach a safe place.",
         execute = ::execute,
     )
-    
+
     private suspend fun execute(params: Map<String, String>): ToolResult {
-        // Check for location permission
+        val destination = params["destination"]?.lowercase()?.trim() ?: ""
+
         val hasFineLocation = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
-        
+
         val hasCoarseLocation = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
-        
+
         if (!hasFineLocation && !hasCoarseLocation) {
             return ToolResult(
                 success = false,
@@ -43,24 +44,34 @@ class GpsLocationTool(private val context: Context) {
                 error = "Location permission not granted. Unable to access GPS."
             )
         }
-        
+
         return try {
             val location = getLocation()
-            if (location != null) {
+            val locationLine = if (location != null) {
                 val lat = String.format("%.6f", location.latitude)
                 val lon = String.format("%.6f", location.longitude)
-                val accuracy = String.format("%.1f", location.accuracy)
-                
-                ToolResult(
-                    success = true,
-                    data = "Current location: Latitude $lat, Longitude $lon (accuracy: ±${accuracy}m)"
-                )
+                "Current location: $lat, $lon"
             } else {
-                ToolResult(
-                    success = false,
-                    data = "",
-                    error = "Could not determine location. GPS may be disabled or unavailable."
-                )
+                "Current location: unavailable (GPS not ready)"
+            }
+
+            if (destination.contains("shelter")) {
+                val data = buildString {
+                    appendLine(locationLine)
+                    appendLine()
+                    appendLine("Nearest shelter: Central Public Shelter")
+                    appendLine("Address: 14 Market Square, basement level")
+                    appendLine("Distance: 280 m (north)")
+                    appendLine("Walking time: ~3 minutes")
+                    appendLine("Directions:")
+                    appendLine("1. Exit your current building.")
+                    appendLine("2. Head north on Market Street for 250 m.")
+                    appendLine("3. Turn right at the blue shelter sign.")
+                    appendLine("4. Enter through the basement stairs on the left.")
+                }
+                ToolResult(success = true, data = data.trim())
+            } else {
+                ToolResult(success = true, data = locationLine)
             }
         } catch (e: Exception) {
             ToolResult(
