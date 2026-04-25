@@ -120,16 +120,12 @@ fun ChatThreadScreen(
                                 UserMessageBubble(text = message.text)
                             }
                         }
-<<<<<<< HEAD
-                        ChatRole.ASSISTANT -> AssistantMessageBubble(text = message.text)
-=======
                         ChatRole.ASSISTANT -> {
                             if (message.text.isNotEmpty()) {
                                 AssistantMessageBubble(text = message.text)
                             }
                         }
                         ChatRole.TOOL -> ToolCallBubble(toolCall = message.toolCall!!)
->>>>>>> feature/integrate-map-app-with-maps
                     }
                 }
                 if (state.isAssistantTyping) {
@@ -151,10 +147,7 @@ fun ChatThreadScreen(
             onCamera = onCamera,
             pendingImages = pendingImages,
             onRemoveImage = onRemoveImage,
-<<<<<<< HEAD
-=======
             modifier = Modifier.navigationBarsPadding(),
->>>>>>> feature/integrate-map-app-with-maps
         )
     }
 }
@@ -236,13 +229,8 @@ private fun AssistantMessageBubble(text: String) {
                 .border(1.dp, colors.line, EmergencyShapes.card)
                 .padding(horizontal = 14.dp, vertical = 10.dp),
         ) {
-<<<<<<< HEAD
-            MarkdownText(
-                markdown = text,
-=======
             Text(
                 text = text.replace("**", ""),
->>>>>>> feature/integrate-map-app-with-maps
                 style = typography.body,
                 color = colors.text,
                 modifier = Modifier.fillMaxWidth(),

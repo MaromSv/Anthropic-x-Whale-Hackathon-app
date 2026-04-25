@@ -7,10 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-<<<<<<< HEAD
-=======
 import androidx.compose.foundation.layout.PaddingValues
->>>>>>> feature/integrate-map-app-with-maps
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -62,14 +59,6 @@ fun ChatInputBar(
     val hasImages = pendingImages.isNotEmpty()
     val canSend = hasText || hasImages
 
-<<<<<<< HEAD
-    Column(modifier = modifier.fillMaxWidth()) {
-        // Show pending images
-        if (hasImages) {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-=======
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -79,7 +68,6 @@ fun ChatInputBar(
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp),
->>>>>>> feature/integrate-map-app-with-maps
             ) {
                 items(pendingImages) { path ->
                     Box {
@@ -97,22 +85,13 @@ fun ChatInputBar(
                                 .size(20.dp)
                                 .align(Alignment.TopEnd)
                                 .clip(CircleShape)
-<<<<<<< HEAD
-                                .background(colors.panel),
-=======
                                 .background(colors.surface),
->>>>>>> feature/integrate-map-app-with-maps
                         ) {
                             Icon(
                                 Icons.Default.Close,
                                 contentDescription = "Remove",
-<<<<<<< HEAD
-                                tint = colors.text,
-                                modifier = Modifier.size(12.dp),
-=======
                                 modifier = Modifier.size(12.dp),
                                 tint = colors.text,
->>>>>>> feature/integrate-map-app-with-maps
                             )
                         }
                     }
@@ -120,10 +99,7 @@ fun ChatInputBar(
             }
         }
 
-<<<<<<< HEAD
-=======
         // Input row
->>>>>>> feature/integrate-map-app-with-maps
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
@@ -133,16 +109,6 @@ fun ChatInputBar(
                 .border(1.dp, colors.line, EmergencyShapes.pill)
                 .padding(horizontal = 6.dp, vertical = 6.dp),
         ) {
-<<<<<<< HEAD
-            ComposerIconButton(
-                icon = Icons.Outlined.PhotoCamera,
-                contentDescription = "Add photo",
-                tint = colors.textDim,
-                onClick = onCamera,
-            )
-
-            Spacer(modifier = Modifier.width(4.dp))
-=======
         ComposerIconButton(
             icon = Icons.Outlined.PhotoCamera,
             contentDescription = "Add photo",
@@ -151,7 +117,6 @@ fun ChatInputBar(
         )
 
         Spacer(modifier = Modifier.width(4.dp))
->>>>>>> feature/integrate-map-app-with-maps
 
             Box(modifier = Modifier.weight(1f)) {
                 if (!hasText) {

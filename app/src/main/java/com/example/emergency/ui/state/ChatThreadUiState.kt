@@ -14,10 +14,7 @@ data class ChatMessage(
     val text: String,
     val timestampLabel: String,
     val imagePaths: List<String> = emptyList(),
-<<<<<<< HEAD
-=======
     val toolCall: ToolCallInfo? = null,
->>>>>>> feature/integrate-map-app-with-maps
 )
 
 data class ChatThreadUiState(

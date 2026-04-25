@@ -18,17 +18,8 @@ android/app/release/
 
 # OS
 .DS_Store
-<<<<<<< HEAD
-/build
-**/build/
-/captures
-.externalNativeBuild
-.cxx
-local.properties
-=======
 Thumbs.db
 
 # Node / Expo legacy (keep ignoring)
 node_modules/
 .expo/
->>>>>>> feature/integrate-map-app-with-maps

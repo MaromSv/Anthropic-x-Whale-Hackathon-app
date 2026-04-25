@@ -50,10 +50,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-<<<<<<< HEAD
-=======
     implementation(libs.play.services.location)
->>>>>>> feature/integrate-map-app-with-maps
     // Gemma LLM
     implementation(libs.litertlm.android)
     implementation(libs.kotlinx.coroutines.android)
@@ -62,11 +59,8 @@ dependencies {
     implementation(libs.coil.compose)
     // Markdown rendering
     implementation(libs.compose.markdown)
-<<<<<<< HEAD
-=======
     // Interactive map (MapLibre — uses Mapbox SDK 6 namespace)
     implementation(libs.maplibre.android.sdk)
->>>>>>> feature/integrate-map-app-with-maps
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

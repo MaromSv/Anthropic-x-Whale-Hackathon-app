@@ -2,18 +2,12 @@ package com.example.emergency.ui.nav
 
 import android.net.Uri
 import android.util.Log
-<<<<<<< HEAD
-=======
 import android.Manifest
->>>>>>> feature/integrate-map-app-with-maps
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-<<<<<<< HEAD
-=======
 import androidx.compose.runtime.LaunchedEffect
->>>>>>> feature/integrate-map-app-with-maps
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -22,15 +16,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-<<<<<<< HEAD
-import java.io.File
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
-import com.example.emergency.llm.GemmaBackend
-import com.example.emergency.llm.GemmaLlm
-import com.example.emergency.llm.GemmaLoadOptions
-=======
 import androidx.core.content.FileProvider
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -44,7 +29,6 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
->>>>>>> feature/integrate-map-app-with-maps
 import com.example.emergency.ui.screen.AbcCheckScreen
 import com.example.emergency.ui.screen.ChatThreadScreen
 import com.example.emergency.ui.screen.ConversationsScreen
@@ -68,13 +52,6 @@ import com.example.emergency.ui.state.SampleHomeUiState
 import com.example.emergency.ui.state.SampleMapUiState
 import com.example.emergency.ui.state.SamplePersonalInfoUiState
 import com.example.emergency.ui.state.SampleSettingsUiState
-<<<<<<< HEAD
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-
-=======
->>>>>>> feature/integrate-map-app-with-maps
 enum class ModelStatus { IDLE, LOADING, READY, ERROR }
 
 @Composable
@@ -88,18 +65,11 @@ fun AppNavHost() {
     var modelError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-<<<<<<< HEAD
-    // Create GemmaLlm instance
-    val gemma = remember { GemmaLlm(context) }
-
-    // Image pickers - declare state first
-=======
     // Create LLM and ToolManager instances
     val gemma = remember { GemmaLlm(context) }
     val toolManager = remember { ToolManager(context) }
 
     // Image pickers
->>>>>>> feature/integrate-map-app-with-maps
     var pendingCameraPath by remember { mutableStateOf<String?>(null) }
     
     val takePicture = rememberLauncherForActivityResult(
@@ -107,34 +77,12 @@ fun AppNavHost() {
     ) { success ->
         if (success && pendingCameraPath != null) {
             pendingImages.add(pendingCameraPath!!)
-<<<<<<< HEAD
-        } else {
-            pendingCameraPath?.let { File(it).delete() }
-=======
->>>>>>> feature/integrate-map-app-with-maps
         }
         pendingCameraPath = null
     }
     
     val requestCameraPermission = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
-<<<<<<< HEAD
-    ) { isGranted ->
-        if (isGranted && pendingCameraPath != null) {
-            val file = File(pendingCameraPath!!)
-            val uri = androidx.core.content.FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                file
-            )
-            takePicture.launch(uri)
-        } else {
-            pendingCameraPath?.let { File(it).delete() }
-            pendingCameraPath = null
-        }
-    }
-
-=======
     ) { granted ->
         if (granted && pendingCameraPath != null) {
             val uri = FileProvider.getUriForFile(
@@ -148,27 +96,10 @@ fun AppNavHost() {
         }
     }
     
->>>>>>> feature/integrate-map-app-with-maps
     val pickImage = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri: Uri? ->
         if (uri != null) {
-<<<<<<< HEAD
-            scope.launch(Dispatchers.IO) {
-                val ext = context.contentResolver.getType(uri)
-                    ?.substringAfterLast('/')
-                    ?.lowercase()
-                    ?.let { if (it in setOf("jpeg", "jpg", "png", "webp")) it else "jpg" }
-                    ?: "jpg"
-                val dest = File(context.cacheDir, "img_${System.currentTimeMillis()}.$ext")
-                context.contentResolver.openInputStream(uri)?.use { input ->
-                    dest.outputStream().use { input.copyTo(it) }
-                }
-                pendingImages.add(dest.absolutePath)
-            }
-        }
-    }
-=======
             val ext = context.contentResolver.getType(uri)
                 ?.substringAfterLast('/')
                 ?.lowercase()
@@ -197,7 +128,6 @@ fun AppNavHost() {
             )
         )
     }
->>>>>>> feature/integrate-map-app-with-maps
 
     // Clean up when composable leaves composition
     DisposableEffect(Unit) {
@@ -251,31 +181,7 @@ fun AppNavHost() {
                                 GemmaLoadOptions(
                                     modelPath = modelPath,
                                     backend = GemmaBackend.GPU,
-<<<<<<< HEAD
-                                    systemInstruction = 
-                                    """Act as a medical emergency assistant by providing concise, step-by-step advice in urgent medical situations. Your responses must be extremely brief, focused only on essential actions, and suitable for laypeople. Always advise to call emergency services if the situation may be life-threatening. Do not provide lengthy explanations or medical jargon. 
-
-Before offering actions, internally consider the symptoms, level of risk, and urgency, then present only the most immediate and necessary steps.
-
-**Output format:**  
-- Maximum 2 concise steps, each ≤20 words.
-- Use numbered bullets.
-
-**Example:**
-Input: "[Image of a wound] text: how to apply a tourniquet?"
-Output:  
-1. Find the source of the severe bleeding and focus on the worst wound first if there is more than one.
-2. Place the tourniquet 5 tot 7 cm above the wound, between the wound and the heart.
-3. Tighten the strap as much as you can around the limb. If you don't have a cloth. 
-4. Twist the windlass rod until the bleeding stops, or until you cannot twist it any further.
-5. Lock or clip the rod in place so it cannot unwind.
-6. Mark the time.
-
-(Reminder: The most important objective is to provide concise, lifesaving guidance suitable for emergency situations.)
-"""
-=======
                                     systemInstruction = buildSystemPrompt(toolManager)
->>>>>>> feature/integrate-map-app-with-maps
                                 )
                             )
                         }
@@ -302,19 +208,6 @@ Output:
                     }
                 }
                 
-<<<<<<< HEAD
-                if (gemma.isLoaded) {
-                    withContext(Dispatchers.IO) {
-                        gemma.generateStreamingWithImages(text, images).collect { token ->
-                            // Update the assistant message with streaming tokens
-                            val idx = threadMessages.indexOfFirst { it.id == assistantId }
-                            if (idx >= 0) {
-                                val current = threadMessages[idx]
-                                threadMessages[idx] = current.copy(text = current.text + token)
-                            }
-                        }
-                    }
-=======
                 // Generate response with tool calling support
                 if (gemma.isLoaded) {
                     var fullResponse = ""
@@ -419,7 +312,6 @@ Output:
                             )
                         }
                     }
->>>>>>> feature/integrate-map-app-with-maps
                 } else {
                     // Fallback if model not loaded
                     val idx = threadMessages.indexOfFirst { it.id == assistantId }
@@ -484,20 +376,9 @@ Output:
                 ),
                 onBack = { navController.popBackStack() },
                 onSend = { text -> sendUserMessage(text) },
-<<<<<<< HEAD
-                onCamera = {
-                    val file = File(context.cacheDir, "img_${System.currentTimeMillis()}.jpg")
-                    file.createNewFile()
-                    pendingCameraPath = file.absolutePath
-                    requestCameraPermission.launch(android.Manifest.permission.CAMERA)
-                },
-                pendingImages = pendingImages.toList(),
-                onRemoveImage = { path -> pendingImages.remove(path) },
-=======
                 onCamera = { onCamera() },
                 pendingImages = pendingImages,
                 onRemoveImage = { path -> onRemoveImage(path) },
->>>>>>> feature/integrate-map-app-with-maps
             )
         }
         composable(Route.DataPacks.path) {
@@ -552,8 +433,6 @@ Output:
         }
     }
 }
-<<<<<<< HEAD
-=======
 
 private fun buildSystemPrompt(toolManager: ToolManager): String {
     return """
@@ -593,4 +472,3 @@ query=burn treatment
 </tool_call>
     """.trimIndent()
 }
->>>>>>> feature/integrate-map-app-with-maps
