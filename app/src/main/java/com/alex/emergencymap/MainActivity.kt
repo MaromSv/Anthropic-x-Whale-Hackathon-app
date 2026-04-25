@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.graphics.RectF
 import android.os.Bundle
 import android.util.Log
@@ -88,6 +89,7 @@ import com.mapbox.mapboxsdk.style.expressions.Expression
 import com.mapbox.mapboxsdk.style.layers.CircleLayer
 import com.mapbox.mapboxsdk.style.layers.LineLayer
 import com.mapbox.mapboxsdk.style.layers.PropertyFactory
+import com.mapbox.mapboxsdk.style.layers.SymbolLayer
 import com.mapbox.mapboxsdk.style.sources.GeoJsonSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -129,10 +131,10 @@ private data class RouteResult(
     val durationS: Double,
 )
 
-private enum class Mode(val osrmProfile: String, val label: String, val icon: ImageVector) {
-    Walk("foot", "Walk", Icons.Default.DirectionsWalk),
-    Bike("bike", "Bike", Icons.Default.DirectionsBike),
-    Drive("car", "Drive", Icons.Default.DirectionsCar),
+private enum class Mode(val brouterProfile: String, val label: String, val icon: ImageVector) {
+    Walk("trekking", "Walk", Icons.Default.DirectionsWalk),
+    Bike("fastbike", "Bike", Icons.Default.DirectionsBike),
+    Drive("car-fast", "Drive", Icons.Default.DirectionsCar),
 }
 
 private val POIS = listOf(
@@ -254,7 +256,7 @@ fun MapScreen() {
                 .build()
             map.setStyle(Style.Builder().fromJson(PDOK_BRT_STYLE)) { style ->
                 Log.d(TAG, "Style loaded")
-                addPoiLayer(style)
+                addPoiLayer(context, style)
                 routeSource = addRouteLayer(style)
             }
             map.addOnMapClickListener { latLng ->
@@ -281,7 +283,7 @@ fun MapScreen() {
             return@LaunchedEffect
         }
         routeLoading = true
-        val result = osrmRoute(userLocation, LatLng(poi.lat, poi.lon), mode.osrmProfile)
+        val result = brouterRoute(userLocation, LatLng(poi.lat, poi.lon), mode.brouterProfile)
         routeLoading = false
         if (result != null && result.polyline.size > 1) {
             routeResult = result
@@ -289,7 +291,7 @@ fun MapScreen() {
             routeSource?.setGeoJson(LineString.fromLngLats(pts))
         } else {
             routeResult = null
-            Log.e(TAG, "Routing failed for $poi via ${mode.osrmProfile}")
+            Log.e(TAG, "Routing failed for $poi via ${mode.brouterProfile}")
         }
     }
 
@@ -446,7 +448,17 @@ private fun formatDuration(seconds: Double): String {
 
 // ─── Map layers ──────────────────────────────────────────────────────────────
 
-private fun addPoiLayer(style: Style) {
+private fun addPoiLayer(context: Context, style: Style) {
+    // Register category icons (white glyphs on transparent, sit on top of colored circles).
+    listOf("hospital", "aed", "pharmacy", "police", "fire", "shelter").forEach { name ->
+        val resId = context.resources.getIdentifier("ic_poi_$name", "drawable", context.packageName)
+        if (resId != 0) {
+            BitmapFactory.decodeResource(context.resources, resId)?.let { bmp ->
+                style.addImage("$name-icon", bmp)
+            }
+        }
+    }
+
     val features = POIS.map { p ->
         Feature.fromGeometry(Point.fromLngLat(p.lon, p.lat)).apply {
             addStringProperty("name", p.name)
@@ -454,9 +466,11 @@ private fun addPoiLayer(style: Style) {
         }
     }
     style.addSource(GeoJsonSource("pois-source", FeatureCollection.fromFeatures(features)))
+
+    // Colored circle background.
     style.addLayer(
         CircleLayer("pois-layer", "pois-source").withProperties(
-            PropertyFactory.circleRadius(8f),
+            PropertyFactory.circleRadius(13f),
             PropertyFactory.circleStrokeWidth(2.5f),
             PropertyFactory.circleStrokeColor("#FFFFFF"),
             PropertyFactory.circleColor(
@@ -471,6 +485,18 @@ private fun addPoiLayer(style: Style) {
                     Expression.stop("shelter",  "#00897B"),
                 )
             )
+        )
+    )
+
+    // White category icon on top of the circle.
+    style.addLayer(
+        SymbolLayer("pois-icons-layer", "pois-source").withProperties(
+            PropertyFactory.iconImage(
+                Expression.concat(Expression.get("category"), Expression.literal("-icon"))
+            ),
+            PropertyFactory.iconSize(0.22f),
+            PropertyFactory.iconAllowOverlap(true),
+            PropertyFactory.iconIgnorePlacement(true),
         )
     )
 }
@@ -491,31 +517,32 @@ private fun addRouteLayer(style: Style): GeoJsonSource {
 
 // ─── Network ─────────────────────────────────────────────────────────────────
 
-private suspend fun osrmRoute(from: LatLng, to: LatLng, profile: String): RouteResult? =
+private suspend fun brouterRoute(from: LatLng, to: LatLng, profile: String): RouteResult? =
     withContext(Dispatchers.IO) {
         try {
             val url = URL(
-                "https://router.project-osrm.org/route/v1/$profile/" +
-                "${from.longitude},${from.latitude};${to.longitude},${to.latitude}" +
-                "?overview=full&geometries=geojson"
+                "https://brouter.de/brouter?lonlats=" +
+                "${from.longitude},${from.latitude}|${to.longitude},${to.latitude}" +
+                "&profile=$profile&alternativeidx=0&format=geojson"
             )
             val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 10_000
-            conn.readTimeout = 10_000
+            conn.connectTimeout = 15_000
+            conn.readTimeout = 30_000
             val body = conn.inputStream.bufferedReader().use { it.readText() }
-            val route = JSONObject(body).getJSONArray("routes").getJSONObject(0)
-            val coords = route.getJSONObject("geometry").getJSONArray("coordinates")
+            val feature = JSONObject(body).getJSONArray("features").getJSONObject(0)
+            val props = feature.getJSONObject("properties")
+            val coords = feature.getJSONObject("geometry").getJSONArray("coordinates")
             val polyline = (0 until coords.length()).map {
                 val pt = coords.getJSONArray(it)
                 LatLng(pt.getDouble(1), pt.getDouble(0))
             }
             RouteResult(
                 polyline = polyline,
-                distanceM = route.getDouble("distance"),
-                durationS = route.getDouble("duration"),
+                distanceM = props.getString("track-length").toDouble(),
+                durationS = props.getString("total-time").toDouble(),
             )
         } catch (e: Exception) {
-            Log.e(TAG, "OSRM failed: $profile", e)
+            Log.e(TAG, "BRouter failed: $profile", e)
             null
         }
     }
