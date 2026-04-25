@@ -25,6 +25,7 @@ import com.mapbox.mapboxsdk.WellKnownTileServer
 import com.mapbox.mapboxsdk.camera.CameraPosition
 import com.mapbox.mapboxsdk.geometry.LatLng
 import com.mapbox.mapboxsdk.maps.MapView
+import com.mapbox.mapboxsdk.maps.MapboxMapOptions
 import com.mapbox.mapboxsdk.maps.Style
 
 private const val TAG = "EmergencyMap"
@@ -46,7 +47,8 @@ fun MapScreen() {
     val context = LocalContext.current
 
     val mapView = remember {
-        MapView(context).apply {
+        val options = MapboxMapOptions.createFromAttributes(context).textureMode(true)
+        MapView(context, options).apply {
             id = View.generateViewId()
             onCreate(null)
         }
@@ -87,10 +89,7 @@ fun MapScreen() {
         }
     }
 
-    AndroidView(
-        factory = { mapView },
-        modifier = Modifier.fillMaxSize().background(ComposeColor.Magenta),
-    )
+    AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
 }
 
 private const val PDOK_BRT_STYLE = """
