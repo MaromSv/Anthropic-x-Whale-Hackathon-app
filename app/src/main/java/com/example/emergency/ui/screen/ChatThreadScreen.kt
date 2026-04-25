@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,7 +25,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import java.io.File
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -48,6 +55,8 @@ fun ChatThreadScreen(
     onSend: (String) -> Unit,
     onMic: () -> Unit = {},
     onCamera: () -> Unit = {},
+    pendingImages: List<String> = emptyList(),
+    onRemoveImage: (String) -> Unit = {},
 ) {
     val colors = EmergencyTheme.colors
     val typography = EmergencyTheme.typography
@@ -93,7 +102,13 @@ fun ChatThreadScreen(
             ) {
                 items(items = state.messages, key = { it.id }) { message ->
                     when (message.role) {
-                        ChatRole.USER -> UserMessageBubble(text = message.text)
+                        ChatRole.USER -> {
+                            if (message.imagePaths.isNotEmpty()) {
+                                UserMessageBubbleWithImages(message = message)
+                            } else {
+                                UserMessageBubble(text = message.text)
+                            }
+                        }
                         ChatRole.ASSISTANT -> AssistantMessageBubble(text = message.text)
                     }
                 }
@@ -107,13 +122,15 @@ fun ChatThreadScreen(
             text = composer,
             onTextChange = { composer = it },
             onSend = {
-                if (composer.isNotEmpty()) {
+                if (composer.isNotEmpty() || pendingImages.isNotEmpty()) {
                     onSend(composer)
                     composer = ""
                 }
             },
             onMic = onMic,
             onCamera = onCamera,
+            pendingImages = pendingImages,
+            onRemoveImage = onRemoveImage,
             modifier = Modifier.navigationBarsPadding(),
         )
     }
@@ -139,6 +156,43 @@ private fun UserMessageBubble(text: String) {
                 style = typography.body,
                 color = colors.accentInk,
             )
+        }
+    }
+}
+
+@Composable
+private fun UserMessageBubbleWithImages(message: com.example.emergency.ui.state.ChatMessage) {
+    val colors = EmergencyTheme.colors
+    val typography = EmergencyTheme.typography
+    Row(
+        horizontalArrangement = Arrangement.End,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 280.dp)
+                .clip(EmergencyShapes.card)
+                .background(colors.accent)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            message.imagePaths.forEach { path ->
+                AsyncImage(
+                    model = File(path),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(200.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                )
+            }
+            if (message.text.isNotEmpty()) {
+                Text(
+                    text = message.text,
+                    style = typography.body,
+                    color = colors.accentInk,
+                )
+            }
         }
     }
 }

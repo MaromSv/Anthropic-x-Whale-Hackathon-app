@@ -7,6 +7,7 @@ data class ChatMessage(
     val role: ChatRole,
     val text: String,
     val timestampLabel: String,
+    val imagePaths: List<String> = emptyList(),
 )
 
 data class ChatThreadUiState(
