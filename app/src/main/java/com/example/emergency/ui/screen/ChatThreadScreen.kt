@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.example.emergency.ui.screen.chat.ChatInputBar
+import com.example.emergency.ui.screen.chat.CprWalkthroughCard
 import com.example.emergency.ui.screen.common.SubScreenTopBar
 import com.example.emergency.ui.state.ChatRole
 import com.example.emergency.ui.state.ChatThreadUiState
@@ -58,6 +59,7 @@ fun ChatThreadScreen(
     onCamera: () -> Unit = {},
     pendingImages: List<String> = emptyList(),
     onRemoveImage: (String) -> Unit = {},
+    onOpenTool: (String) -> Unit = {},
 ) {
     val colors = EmergencyTheme.colors
     val typography = EmergencyTheme.typography
@@ -115,7 +117,14 @@ fun ChatThreadScreen(
                                 AssistantMessageBubble(text = message.text)
                             }
                         }
-                        ChatRole.TOOL -> ToolCallBubble(toolCall = message.toolCall!!)
+                        ChatRole.TOOL -> {
+                            val toolCall = message.toolCall!!
+                            if (toolCall.toolName == "cpr_instructions" && toolCall.status == "success") {
+                                CprWalkthroughCard(onClick = { onOpenTool(toolCall.toolName) })
+                            } else {
+                                ToolCallBubble(toolCall = toolCall)
+                            }
+                        }
                     }
                 }
                 if (state.isAssistantTyping) {

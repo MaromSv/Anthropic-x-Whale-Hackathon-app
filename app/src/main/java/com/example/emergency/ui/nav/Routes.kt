@@ -14,6 +14,7 @@ sealed class Route(val path: String) {
     data object AbcCheck : Route("abc_check")
     data object GetOut : Route("get_out")
     data object Settings : Route("settings")
+    data object CprWalkthrough : Route("cpr_walkthrough")
 }
 
 fun DrawerItemId.toRoute(): Route = when (this) {
