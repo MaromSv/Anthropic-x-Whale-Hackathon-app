@@ -1,0 +1,24 @@
+<!--
+  Bunker pin icon: white-on-transparent silhouette, drawn over the colored
+  category circle (#424242 for bunker). 48dp source — MapLibre rasterizes via
+  drawableToBitmap() in InteractiveMap.kt.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- Concrete dome with flat base -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M24,10
+                          C14,10 8,18 8,26
+                          V36
+                          H40
+                          V26
+                          C40,18 34,10 24,10 Z" />
+    <!-- Embrasure slit -->
+    <path
+        android:fillColor="#424242"
+        android:pathData="M16,22 H32 V26 H16 Z" />
+</vector>

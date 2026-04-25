@@ -4,8 +4,10 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.RectF
+import android.graphics.drawable.BitmapDrawable
 import android.util.Log
 import android.view.View
 import androidx.compose.animation.AnimatedVisibility
@@ -30,21 +32,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsBike
 import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.DirectionsSubway
 import androidx.compose.material.icons.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocalAtm
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.LocalGasStation
 import androidx.compose.material.icons.filled.LocalGroceryStore
 import androidx.compose.material.icons.filled.LocalHospital
-import androidx.compose.material.icons.filled.LocalParking
 import androidx.compose.material.icons.filled.LocalPharmacy
 import androidx.compose.material.icons.filled.LocalPolice
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Place
-import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -71,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.google.android.gms.location.LocationServices
@@ -114,12 +114,12 @@ private fun LatLng.isInNL(): Boolean =
     latitude in NL_BBOX_SW.latitude..NL_BBOX_NE.latitude &&
         longitude in NL_BBOX_SW.longitude..NL_BBOX_NE.longitude
 
-// All POI categories produced by data-pipeline/extract_pois.py. Listed once so
-// icon registration, color stops and bottom-card mappings stay in sync.
+// POI categories present in assets/pois-nl.geojson. Listed once so icon
+// registration, color stops and bottom-card mappings stay in sync.
 private val POI_CATEGORIES = listOf(
     "hospital", "doctor", "first_aid", "aed", "pharmacy", "police", "fire",
-    "shelter", "water", "toilet", "metro", "parking_underground", "bunker",
-    "fuel", "supermarket", "atm", "phone", "school", "community", "worship",
+    "water", "toilet", "bunker",
+    "fuel", "supermarket", "atm", "phone",
 )
 
 private data class Poi(val name: String, val category: String, val lat: Double, val lon: Double)
@@ -142,14 +142,11 @@ private fun categoryIcon(category: String): ImageVector = when (category) {
     "pharmacy"            -> Icons.Default.LocalPharmacy
     "police"              -> Icons.Default.LocalPolice
     "fire"                -> Icons.Default.LocalFireDepartment
-    "shelter"             -> Icons.Default.Home
-    "metro"               -> Icons.Default.DirectionsSubway
+    "bunker"              -> Icons.Default.Shield
     "fuel"                -> Icons.Default.LocalGasStation
     "supermarket"         -> Icons.Default.LocalGroceryStore
     "atm"                 -> Icons.Default.LocalAtm
     "phone"               -> Icons.Default.Phone
-    "school"              -> Icons.Default.School
-    "parking_underground" -> Icons.Default.LocalParking
     else                  -> Icons.Default.Place
 }
 
@@ -161,19 +158,13 @@ private fun categoryColor(category: String): Color = when (category) {
     "pharmacy"            -> Color(0xFF43A047)
     "police"              -> Color(0xFF1E40AF)
     "fire"                -> Color(0xFFB71C1C)
-    "shelter"             -> Color(0xFF00897B)
     "water"               -> Color(0xFF29B6F6)
     "toilet"              -> Color(0xFF6D4C41)
-    "metro"               -> Color(0xFF5E35B1)
-    "parking_underground" -> Color(0xFF455A64)
     "bunker"              -> Color(0xFF424242)
     "fuel"                -> Color(0xFFF9A825)
     "supermarket"         -> Color(0xFF7CB342)
     "atm"                 -> Color(0xFF00ACC1)
     "phone"               -> Color(0xFF8E24AA)
-    "school"              -> Color(0xFFFFB300)
-    "community"           -> Color(0xFF3949AB)
-    "worship"             -> Color(0xFF6A1B9A)
     else                  -> Color(0xFF757575)
 }
 
@@ -470,14 +461,13 @@ private fun formatDuration(seconds: Double): String {
 // ─── Map layers ──────────────────────────────────────────────────────────────
 
 // Adds the POI source + layers to the style. POIs are loaded from
-// app/src/main/assets/pois-nl.geojson (produced by data-pipeline/extract_pois.py)
-// and aggregated client-side via MapLibre clustering — without that, rendering
-// 128k+ pins at low zoom levels would stutter.
+// app/src/main/assets/pois-nl.geojson and aggregated client-side via MapLibre
+// clustering — without that, rendering dense pins at low zoom would stutter.
 private fun addPoiLayer(context: Context, style: Style) {
     POI_CATEGORIES.forEach { name ->
         val resId = context.resources.getIdentifier("ic_poi_$name", "drawable", context.packageName)
         if (resId != 0) {
-            BitmapFactory.decodeResource(context.resources, resId)?.let { bmp ->
+            drawableToBitmap(context, resId)?.let { bmp ->
                 style.addImage("$name-icon", bmp)
             }
         }
@@ -532,19 +522,13 @@ private fun addPoiLayer(context: Context, style: Style) {
         Expression.stop("pharmacy",            "#43A047"),
         Expression.stop("police",              "#1E40AF"),
         Expression.stop("fire",                "#B71C1C"),
-        Expression.stop("shelter",             "#00897B"),
         Expression.stop("water",               "#29B6F6"),
         Expression.stop("toilet",              "#6D4C41"),
-        Expression.stop("metro",               "#5E35B1"),
-        Expression.stop("parking_underground", "#455A64"),
         Expression.stop("bunker",              "#424242"),
         Expression.stop("fuel",                "#F9A825"),
         Expression.stop("supermarket",         "#7CB342"),
         Expression.stop("atm",                 "#00ACC1"),
         Expression.stop("phone",               "#8E24AA"),
-        Expression.stop("school",              "#FFB300"),
-        Expression.stop("community",           "#3949AB"),
-        Expression.stop("worship",             "#6A1B9A"),
     )
 
     val unclustered = Expression.not(Expression.has("point_count"))
@@ -612,6 +596,20 @@ private fun addRouteLayer(style: Style): GeoJsonSource {
         "pois-layer",
     )
     return source
+}
+
+// `BitmapFactory.decodeResource` returns null for vector drawables, so we
+// rasterize via Drawable.draw() ourselves. Falls back to a 96px square when
+// the drawable has no intrinsic size (raw shapes).
+private fun drawableToBitmap(context: Context, resId: Int): Bitmap? {
+    val drawable = ContextCompat.getDrawable(context, resId) ?: return null
+    if (drawable is BitmapDrawable) return drawable.bitmap
+    val w = drawable.intrinsicWidth.takeIf { it > 0 } ?: 96
+    val h = drawable.intrinsicHeight.takeIf { it > 0 } ?: 96
+    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    drawable.setBounds(0, 0, w, h)
+    drawable.draw(Canvas(bmp))
+    return bmp
 }
 
 // ─── Network ─────────────────────────────────────────────────────────────────
