@@ -255,7 +255,9 @@ fun MapScreen() {
     }
 
     LaunchedEffect(mapView) {
+        Log.d(TAG, "getMapAsync requested")
         mapView.getMapAsync { map ->
+            Log.d(TAG, "MapboxMap ready; setting style")
             mapboxMap = map
             // Open at city-level zoom on whatever location we currently have
             // (Dam Square fallback). The LaunchedEffect below will animate to
@@ -265,9 +267,14 @@ fun MapScreen() {
                 .zoom(14.0)
                 .build()
             map.setStyle(Style.Builder().fromJson(PDOK_BRT_STYLE)) { style ->
-                Log.d(TAG, "Style loaded")
-                addPoiLayer(context, style)
-                routeSource = addRouteLayer(style)
+                Log.d(TAG, "Style loaded; layers=${style.layers.size}, sources=${style.sources.size}")
+                try {
+                    addPoiLayer(context, style)
+                    routeSource = addRouteLayer(style)
+                    Log.d(TAG, "POI + route layers attached")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Layer setup failed", e)
+                }
             }
             map.addOnMapClickListener { latLng ->
                 val pt = map.projection.toScreenLocation(latLng)
@@ -502,13 +509,20 @@ private fun addPoiLayer(context: Context, style: Style) {
         try {
             val outFile = java.io.File(context.filesDir, "pois-nl.geojson")
             if (!outFile.exists()) {
+                Log.d(TAG, "Copying pois-nl.geojson from assets…")
                 context.assets.open("pois-nl.geojson").use { input ->
                     outFile.outputStream().use { output -> input.copyTo(output) }
                 }
                 Log.d(TAG, "Copied pois-nl.geojson (${outFile.length() / 1024} KB) to ${outFile.absolutePath}")
+            } else {
+                Log.d(TAG, "Reusing existing pois-nl.geojson (${outFile.length() / 1024} KB)")
             }
+            // MapLibre expects a triple-slash file URI; File.toURI() yields
+            // file:/path on some JVMs which the native loader rejects.
+            val uri = "file://${outFile.absolutePath}"
             android.os.Handler(android.os.Looper.getMainLooper()).post {
-                source.setUri(outFile.toURI().toString())
+                Log.d(TAG, "Setting POI source URI: $uri")
+                source.setUri(uri)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to stage pois-nl.geojson", e)
