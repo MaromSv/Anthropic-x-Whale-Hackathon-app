@@ -1,12 +1,20 @@
 package com.example.emergency.ui.state
 
-enum class ChatRole { USER, ASSISTANT }
+enum class ChatRole { USER, ASSISTANT, TOOL }
+
+data class ToolCallInfo(
+    val toolName: String,
+    val status: String, // "calling", "success", "error"
+    val result: String = "",
+)
 
 data class ChatMessage(
     val id: String,
     val role: ChatRole,
     val text: String,
     val timestampLabel: String,
+    val imagePaths: List<String> = emptyList(),
+    val toolCall: ToolCallInfo? = null,
 )
 
 data class ChatThreadUiState(
