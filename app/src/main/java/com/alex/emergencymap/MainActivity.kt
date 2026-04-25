@@ -35,14 +35,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsBike
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.DirectionsSubway
 import androidx.compose.material.icons.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LocalAtm
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.LocalGasStation
+import androidx.compose.material.icons.filled.LocalGroceryStore
 import androidx.compose.material.icons.filled.LocalHospital
+import androidx.compose.material.icons.filled.LocalParking
 import androidx.compose.material.icons.filled.LocalPharmacy
 import androidx.compose.material.icons.filled.LocalPolice
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -74,7 +81,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.alex.emergencymap.ui.theme.EmergencyMapTheme
 import com.google.android.gms.location.LocationServices
-import com.mapbox.geojson.Feature
 import com.mapbox.geojson.FeatureCollection
 import com.mapbox.geojson.LineString
 import com.mapbox.geojson.Point
@@ -138,135 +144,63 @@ private enum class Mode(val brouterProfile: String, val label: String, val icon:
     Drive("car-fast", "Drive", Icons.Default.DirectionsCar),
 }
 
-private val POIS = listOf(
-    // Hospitals (6)
-    Poi("Antoni van Leeuwenhoek", "hospital", 52.35029, 4.82576),
-    Poi("Amsterdam UMC - VUmc", "hospital", 52.33454, 4.85993),
-    Poi("OLVG Oost", "hospital", 52.35815, 4.91532),
-    Poi("BovenIJ Ziekenhuis", "hospital", 52.40465, 4.92192),
-    Poi("Reade (JBI)", "hospital", 52.37063, 4.84449),
-    Poi("OLVG West", "hospital", 52.37101, 4.83973),
-    // Fire stations (16)
-    Poi("Kazerne Victor", "fire", 52.36046, 4.92917),
-    Poi("Kazerne Nico", "fire", 52.37028, 4.90959),
-    Poi("Kazerne Hendrik", "fire", 52.37260, 4.87566),
-    Poi("Kazerne Osdorp", "fire", 52.36653, 4.80248),
-    Poi("Kazerne Amstelveen", "fire", 52.30165, 4.88184),
-    Poi("Kazerne Dirk", "fire", 52.35795, 4.88594),
-    Poi("Kazerne Diemen", "fire", 52.34123, 4.96466),
-    Poi("Kazerne Willem", "fire", 52.34879, 4.91487),
-    Poi("Kazerne IJsbrand", "fire", 52.40633, 4.88952),
-    Poi("Kazerne Zebra", "fire", 52.39621, 4.95491),
-    Poi("Kazerne Teunis", "fire", 52.38463, 4.86343),
-    Poi("Veiligheidscentrum Brandweer", "fire", 52.39603, 4.79901),
-    Poi("Kazerne Pieter", "fire", 52.34893, 4.84358),
-    Poi("Kazerne Duivendrecht", "fire", 52.33231, 4.94038),
-    Poi("Kazerne Noord", "fire", 52.40435, 4.86179),
-    Poi("Kazerne Anton", "fire", 52.30736, 4.97325),
-    // Police (22)
-    Poi("Politie Lijnbaansgracht", "police", 52.36517, 4.88140),
-    Poi("Politie IJ-tunnel", "police", 52.37000, 4.90916),
-    Poi("Politie Amstelveen", "police", 52.30250, 4.86361),
-    Poi("Politie Meer en Vaart", "police", 52.36260, 4.80510),
-    Poi("Politie Van Leijenberghlaan", "police", 52.33097, 4.87980),
-    Poi("Politie Amsterdam", "police", 52.34954, 4.92015),
-    Poi("Luchtvaartpolitie", "police", 52.31398, 4.80771),
-    Poi("Politie Watergraafsmeer", "police", 52.35747, 4.92729),
-    Poi("Politie Overtoomsesluis", "police", 52.37674, 4.84636),
-    Poi("Politie Flierbosdreef", "police", 52.31470, 4.95765),
-    Poi("Politie Houtmankade", "police", 52.38909, 4.88419),
-    Poi("Politie Zuid De Pijp", "police", 52.33998, 4.90222),
-    Poi("Politie Boven-IJ", "police", 52.39503, 4.92783),
-    Poi("Politie Nieuwezijds Voorburg", "police", 52.37645, 4.89437),
-    Poi("Politie Postjesweg", "police", 52.36375, 4.83869),
-    Poi("Politie Sloter", "police", 52.34635, 4.82814),
-    Poi("Politie Amstelland-Oost", "police", 52.34124, 4.96559),
-    Poi("Politie Bijlmer", "police", 52.31336, 4.95817),
-    Poi("Politie Zeeburg", "police", 52.36898, 4.97141),
-    Poi("Hoofdbureau van Politie", "police", 52.36839, 4.87801),
-    Poi("Marechaussee Schiphol", "police", 52.33166, 4.78013),
-    Poi("Marechaussee Noord", "police", 52.39820, 4.83527),
-    // Pharmacies (18)
-    Poi("Transvaal Apotheek", "pharmacy", 52.35356, 4.91938),
-    Poi("Sumatra Apotheek", "pharmacy", 52.36170, 4.93606),
-    Poi("Apotheek Dr de Haan", "pharmacy", 52.35188, 4.85739),
-    Poi("Ferdinand Bol Apotheek", "pharmacy", 52.35321, 4.89118),
-    Poi("Linnaeus Apotheek", "pharmacy", 52.35982, 4.92584),
-    Poi("Mediq Apotheek Badhoevedorp", "pharmacy", 52.33701, 4.78138),
-    Poi("Park Apotheek", "pharmacy", 52.35765, 4.91645),
-    Poi("Benu Apotheek", "pharmacy", 52.37895, 4.80070),
-    Poi("Zuider Apotheek", "pharmacy", 52.34792, 4.91025),
-    Poi("Kamperfoelie Apotheek", "pharmacy", 52.39002, 4.91239),
-    Poi("Lloyd Apotheek", "pharmacy", 52.35944, 4.80372),
-    Poi("De Vogel Apotheek", "pharmacy", 52.37084, 4.91645),
-    Poi("Slotervaart Apotheek", "pharmacy", 52.35706, 4.82687),
-    Poi("Plesman Apotheek", "pharmacy", 52.35588, 4.82183),
-    Poi("Stadion Apotheek", "pharmacy", 52.34604, 4.86539),
-    Poi("Apotheek Koning", "pharmacy", 52.37984, 4.82035),
-    Poi("Apotheek Nieuw Sloten", "pharmacy", 52.34583, 4.80999),
-    Poi("BENU Apotheek Zuidoost", "pharmacy", 52.32575, 4.87533),
-    // Shelters (15)
-    Poi("Schuilplaats Noord", "shelter", 52.38534, 4.85157),
-    Poi("Schuilplaats Oranje Loper", "shelter", 52.42212, 4.94770),
-    Poi("Schuilplaats Centraal A", "shelter", 52.38029, 4.89714),
-    Poi("Schuilplaats Centraal B", "shelter", 52.38044, 4.89723),
-    Poi("Schuilplaats Centraal C", "shelter", 52.38047, 4.89772),
-    Poi("Schuilplaats Centraal D", "shelter", 52.38061, 4.89721),
-    Poi("Schuilplaats Centraal E", "shelter", 52.38020, 4.89749),
-    Poi("Schuilplaats Centraal F", "shelter", 52.38017, 4.89598),
-    Poi("Schuilplaats Centraal G", "shelter", 52.38025, 4.89576),
-    Poi("Schuilplaats Centraal H", "shelter", 52.37995, 4.89654),
-    Poi("Schuilplaats Centraal I", "shelter", 52.37950, 4.89777),
-    Poi("Schuilplaats Watergraafsmeer", "shelter", 52.33055, 4.95640),
-    Poi("Schuilplaats Pijp A", "shelter", 52.33908, 4.87403),
-    Poi("Schuilplaats Pijp B", "shelter", 52.33911, 4.87446),
-    Poi("Schuilplaats Pijp C", "shelter", 52.33913, 4.87495),
-    // AEDs (25)
-    Poi("AED ProRail/NS", "aed", 52.38259, 4.89357),
-    Poi("AED Noord", "aed", 52.38956, 4.83942),
-    Poi("AED Tuindorp", "aed", 52.39475, 4.89936),
-    Poi("AED Centraal", "aed", 52.37848, 4.90016),
-    Poi("AED Oosterdokseiland", "aed", 52.37994, 4.90024),
-    Poi("AED Watergraafsmeer", "aed", 52.33850, 4.97613),
-    Poi("AED De Pijp", "aed", 52.33767, 4.89617),
-    Poi("AED Vondelpark", "aed", 52.36386, 4.85129),
-    Poi("AED Sloterdijk", "aed", 52.35663, 4.79346),
-    Poi("AED Indische Buurt", "aed", 52.36980, 4.92482),
-    Poi("AED Oost", "aed", 52.37139, 4.92167),
-    Poi("AED Centrum", "aed", 52.35181, 4.87824),
-    Poi("AED Westerpark", "aed", 52.38014, 4.85427),
-    Poi("AED Singel", "aed", 52.36847, 4.87794),
-    Poi("AED Plantage", "aed", 52.36868, 4.90382),
-    Poi("AED Centraal-Plein", "aed", 52.37026, 4.90797),
-    Poi("AED Westerdok", "aed", 52.37963, 4.87201),
-    Poi("AED Leidsegracht A", "aed", 52.36690, 4.86888),
-    Poi("AED Leidsegracht B", "aed", 52.36682, 4.86859),
-    Poi("AED Leidsegracht C", "aed", 52.36731, 4.86892),
-    Poi("AED Plantage Oost", "aed", 52.36673, 4.90427),
-    Poi("AED Leidseplein", "aed", 52.36705, 4.86824),
-    Poi("AED Spiegelgracht", "aed", 52.36248, 4.87014),
-    Poi("AED Vondelpark Oost", "aed", 52.35929, 4.86346),
-    Poi("AED Stationsplein", "aed", 52.37809, 4.90107),
+// Bbox covering all of NL (south, west, north, east). Used to frame the
+// initial camera now that POIs are loaded from assets/pois-nl.geojson.
+private val NL_BBOX_SW = LatLng(50.7, 3.3)
+private val NL_BBOX_NE = LatLng(53.6, 7.3)
+
+// All POI categories produced by data-pipeline/extract_pois.py. Listed once so
+// icon registration, color stops and bottom-card mappings stay in sync.
+private val POI_CATEGORIES = listOf(
+    "hospital", "doctor", "first_aid", "aed", "pharmacy", "police", "fire",
+    "shelter", "water", "toilet", "metro", "parking_underground", "bunker",
+    "fuel", "supermarket", "atm", "phone", "school", "community", "worship",
 )
 
+// Maps a POI category to a Compose icon used in the bottom card preview.
+// Categories without a perfect Material match fall back to Place — the OSM
+// PNG on the map pin still represents them correctly.
 private fun categoryIcon(category: String): ImageVector = when (category) {
-    "hospital" -> Icons.Default.LocalHospital
-    "aed"      -> Icons.Default.Favorite
-    "pharmacy" -> Icons.Default.LocalPharmacy
-    "police"   -> Icons.Default.LocalPolice
-    "fire"     -> Icons.Default.LocalFireDepartment
-    "shelter"  -> Icons.Default.Home
-    else       -> Icons.Default.Place
+    "hospital"            -> Icons.Default.LocalHospital
+    "aed"                 -> Icons.Default.Favorite
+    "pharmacy"            -> Icons.Default.LocalPharmacy
+    "police"              -> Icons.Default.LocalPolice
+    "fire"                -> Icons.Default.LocalFireDepartment
+    "shelter"             -> Icons.Default.Home
+    "metro"               -> Icons.Default.DirectionsSubway
+    "fuel"                -> Icons.Default.LocalGasStation
+    "supermarket"         -> Icons.Default.LocalGroceryStore
+    "atm"                 -> Icons.Default.LocalAtm
+    "phone"               -> Icons.Default.Phone
+    "school"              -> Icons.Default.School
+    "parking_underground" -> Icons.Default.LocalParking
+    else                  -> Icons.Default.Place
 }
 
+// One color per category — kept identical to the map circle stops in
+// addPoiLayer so the bottom-card chip and the map pin always agree.
 private fun categoryColor(category: String): Color = when (category) {
-    "hospital" -> Color(0xFFE53935)
-    "aed"      -> Color(0xFFFB8C00)
-    "pharmacy" -> Color(0xFF43A047)
-    "police"   -> Color(0xFF1E40AF)
-    "fire"     -> Color(0xFFB71C1C)
-    "shelter"  -> Color(0xFF00897B)
-    else       -> Color(0xFF757575)
+    "hospital"            -> Color(0xFFE53935)
+    "doctor"              -> Color(0xFFEC407A)
+    "first_aid"           -> Color(0xFFD32F2F)
+    "aed"                 -> Color(0xFFFB8C00)
+    "pharmacy"            -> Color(0xFF43A047)
+    "police"              -> Color(0xFF1E40AF)
+    "fire"                -> Color(0xFFB71C1C)
+    "shelter"             -> Color(0xFF00897B)
+    "water"               -> Color(0xFF29B6F6)
+    "toilet"              -> Color(0xFF6D4C41)
+    "metro"               -> Color(0xFF5E35B1)
+    "parking_underground" -> Color(0xFF455A64)
+    "bunker"              -> Color(0xFF424242)
+    "fuel"                -> Color(0xFFF9A825)
+    "supermarket"         -> Color(0xFF7CB342)
+    "atm"                 -> Color(0xFF00ACC1)
+    "phone"               -> Color(0xFF8E24AA)
+    "school"              -> Color(0xFFFFB300)
+    "community"           -> Color(0xFF3949AB)
+    "worship"             -> Color(0xFF6A1B9A)
+    else                  -> Color(0xFF757575)
 }
 
 // ─── Composable UI ───────────────────────────────────────────────────────────
@@ -316,16 +250,18 @@ fun MapScreen() {
 
     LaunchedEffect(mapView) {
         mapView.getMapAsync { map ->
-            // Fit camera to all POIs at startup.
-            val bounds = com.mapbox.mapboxsdk.geometry.LatLngBounds.Builder().apply {
-                POIS.forEach { include(LatLng(it.lat, it.lon)) }
-            }.build()
+            // Fit camera to the whole NL bbox so the user can immediately see
+            // pins/clusters across the country before zooming in.
+            val bounds = com.mapbox.mapboxsdk.geometry.LatLngBounds.Builder()
+                .include(NL_BBOX_SW)
+                .include(NL_BBOX_NE)
+                .build()
             map.cameraPosition = map.getCameraForLatLngBounds(
                 bounds,
-                intArrayOf(120, 120, 280, 120),  // L, T, R, B padding for top chips & bottom card
+                intArrayOf(60, 100, 60, 200),
             ) ?: CameraPosition.Builder()
-                .target(LatLng(52.3676, 4.9041))
-                .zoom(11.0)
+                .target(LatLng(52.1326, 5.2913))
+                .zoom(7.0)
                 .build()
             map.setStyle(Style.Builder().fromJson(PDOK_BRT_STYLE)) { style ->
                 Log.d(TAG, "Style loaded")
@@ -521,9 +457,12 @@ private fun formatDuration(seconds: Double): String {
 
 // ─── Map layers ──────────────────────────────────────────────────────────────
 
+// Adds the POI source + layers to the style. POIs are loaded from
+// app/src/main/assets/pois-nl.geojson (produced by data-pipeline/extract_pois.py)
+// and aggregated client-side via MapLibre clustering — without that, rendering
+// 128k+ pins at low zoom levels would stutter.
 private fun addPoiLayer(context: Context, style: Style) {
-    // Register category icons (white glyphs on transparent, sit on top of colored circles).
-    listOf("hospital", "aed", "pharmacy", "police", "fire", "shelter").forEach { name ->
+    POI_CATEGORIES.forEach { name ->
         val resId = context.resources.getIdentifier("ic_poi_$name", "drawable", context.packageName)
         if (resId != 0) {
             BitmapFactory.decodeResource(context.resources, resId)?.let { bmp ->
@@ -532,46 +471,105 @@ private fun addPoiLayer(context: Context, style: Style) {
         }
     }
 
-    val features = POIS.map { p ->
-        Feature.fromGeometry(Point.fromLngLat(p.lon, p.lat)).apply {
-            addStringProperty("name", p.name)
-            addStringProperty("category", p.category)
+    val options = GeoJsonOptions()
+        .withCluster(true)
+        .withClusterMaxZoom(13)
+        .withClusterRadius(60)
+    val source = GeoJsonSource("pois-source", options)
+    style.addSource(source)
+
+    // Reading 30+ MB off disk on the UI thread would freeze the launch frame,
+    // so we offload to a worker and push the data back onto the map thread.
+    Thread {
+        try {
+            val raw = context.assets.open("pois-nl.geojson")
+                .bufferedReader()
+                .use { it.readText() }
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                source.setGeoJson(raw)
+            }
+            Log.d(TAG, "Loaded pois-nl.geojson (${raw.length / 1024} KB)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load pois-nl.geojson", e)
         }
-    }
-    style.addSource(GeoJsonSource("pois-source", FeatureCollection.fromFeatures(features)))
+    }.start()
 
-    // Colored circle background.
-    style.addLayer(
-        CircleLayer("pois-layer", "pois-source").withProperties(
-            PropertyFactory.circleRadius(13f),
-            PropertyFactory.circleStrokeWidth(2.5f),
-            PropertyFactory.circleStrokeColor("#FFFFFF"),
-            PropertyFactory.circleColor(
-                Expression.match(
-                    Expression.get("category"),
-                    Expression.literal("#9E9E9E"),
-                    Expression.stop("hospital", "#E53935"),
-                    Expression.stop("aed",      "#FB8C00"),
-                    Expression.stop("pharmacy", "#43A047"),
-                    Expression.stop("police",   "#1E40AF"),
-                    Expression.stop("fire",     "#B71C1C"),
-                    Expression.stop("shelter",  "#00897B"),
-                )
+    val categoryColorExpr = Expression.match(
+        Expression.get("category"),
+        Expression.literal("#9E9E9E"),
+        Expression.stop("hospital",            "#E53935"),
+        Expression.stop("doctor",              "#EC407A"),
+        Expression.stop("first_aid",           "#D32F2F"),
+        Expression.stop("aed",                 "#FB8C00"),
+        Expression.stop("pharmacy",            "#43A047"),
+        Expression.stop("police",              "#1E40AF"),
+        Expression.stop("fire",                "#B71C1C"),
+        Expression.stop("shelter",             "#00897B"),
+        Expression.stop("water",               "#29B6F6"),
+        Expression.stop("toilet",              "#6D4C41"),
+        Expression.stop("metro",               "#5E35B1"),
+        Expression.stop("parking_underground", "#455A64"),
+        Expression.stop("bunker",              "#424242"),
+        Expression.stop("fuel",                "#F9A825"),
+        Expression.stop("supermarket",         "#7CB342"),
+        Expression.stop("atm",                 "#00ACC1"),
+        Expression.stop("phone",               "#8E24AA"),
+        Expression.stop("school",              "#FFB300"),
+        Expression.stop("community",           "#3949AB"),
+        Expression.stop("worship",             "#6A1B9A"),
+    )
+
+    val unclustered = Expression.not(Expression.has("point_count"))
+    val clustered = Expression.has("point_count")
+
+    // Cluster bubble: blue circle that grows with the count.
+    val clusterCircle = CircleLayer("clusters-layer", "pois-source").withProperties(
+        PropertyFactory.circleColor("#1E88E5"),
+        PropertyFactory.circleStrokeColor("#FFFFFF"),
+        PropertyFactory.circleStrokeWidth(2f),
+        PropertyFactory.circleRadius(
+            Expression.step(
+                Expression.toNumber(Expression.get("point_count")),
+                Expression.literal(16f),
+                Expression.stop(50, 22),
+                Expression.stop(200, 28),
+                Expression.stop(1000, 34),
             )
-        )
+        ),
     )
+    clusterCircle.setFilter(clustered)
+    style.addLayer(clusterCircle)
 
-    // White category icon on top of the circle.
-    style.addLayer(
-        SymbolLayer("pois-icons-layer", "pois-source").withProperties(
-            PropertyFactory.iconImage(
-                Expression.concat(Expression.get("category"), Expression.literal("-icon"))
-            ),
-            PropertyFactory.iconSize(0.22f),
-            PropertyFactory.iconAllowOverlap(true),
-            PropertyFactory.iconIgnorePlacement(true),
-        )
+    val clusterCount = SymbolLayer("clusters-count-layer", "pois-source").withProperties(
+        PropertyFactory.textField("{point_count_abbreviated}"),
+        PropertyFactory.textSize(12f),
+        PropertyFactory.textColor("#FFFFFF"),
+        PropertyFactory.textAllowOverlap(true),
+        PropertyFactory.textIgnorePlacement(true),
     )
+    clusterCount.setFilter(clustered)
+    style.addLayer(clusterCount)
+
+    // Individual POI: colored circle, only when not part of a cluster.
+    val poiCircle = CircleLayer("pois-layer", "pois-source").withProperties(
+        PropertyFactory.circleRadius(11f),
+        PropertyFactory.circleStrokeWidth(2.5f),
+        PropertyFactory.circleStrokeColor("#FFFFFF"),
+        PropertyFactory.circleColor(categoryColorExpr),
+    )
+    poiCircle.setFilter(unclustered)
+    style.addLayer(poiCircle)
+
+    val poiIcon = SymbolLayer("pois-icons-layer", "pois-source").withProperties(
+        PropertyFactory.iconImage(
+            Expression.concat(Expression.get("category"), Expression.literal("-icon"))
+        ),
+        PropertyFactory.iconSize(0.20f),
+        PropertyFactory.iconAllowOverlap(true),
+        PropertyFactory.iconIgnorePlacement(true),
+    )
+    poiIcon.setFilter(unclustered)
+    style.addLayer(poiIcon)
 }
 
 private fun addRouteLayer(style: Style): GeoJsonSource {
