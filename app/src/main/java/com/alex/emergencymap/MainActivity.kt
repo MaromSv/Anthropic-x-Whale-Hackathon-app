@@ -146,10 +146,16 @@ private enum class Mode(val brouterProfile: String, val label: String, val icon:
     Drive("car-fast", "Drive", Icons.Default.DirectionsCar),
 }
 
-// Bbox covering all of NL (south, west, north, east). Used to frame the
-// initial camera now that POIs are loaded from assets/pois-nl.geojson.
+// Bbox covering all of NL (south, west, north, east). The PDOK basemap only
+// has tiles inside this region, so we use it to gate the GPS-animate
+// behaviour — otherwise the emulator's default Mountain View location takes
+// us to a tile-less ocean.
 private val NL_BBOX_SW = LatLng(50.7, 3.3)
 private val NL_BBOX_NE = LatLng(53.6, 7.3)
+
+private fun LatLng.isInNL(): Boolean =
+    latitude in NL_BBOX_SW.latitude..NL_BBOX_NE.latitude &&
+        longitude in NL_BBOX_SW.longitude..NL_BBOX_NE.longitude
 
 // All POI categories produced by data-pipeline/extract_pois.py. Listed once so
 // icon registration, color stops and bottom-card mappings stay in sync.
@@ -293,12 +299,18 @@ fun MapScreen() {
     }
 
     // Animate the map to the current GPS fix once both the map is ready and
-    // a user location has resolved. Re-runs whenever userLocation changes,
-    // which in practice fires once when GPS replaces the Dam Square fallback.
+    // a user location has resolved. The PDOK basemap only covers NL, so if
+    // the GPS reports somewhere else (most commonly the default emulator
+    // location in Mountain View, CA) we stay on Dam Square — otherwise the
+    // user sees a black void of un-tiled ocean.
     LaunchedEffect(mapboxMap, userLocation) {
         val map = mapboxMap ?: return@LaunchedEffect
+        val target = if (userLocation.isInNL()) userLocation else DAM_SQUARE
+        if (target !== userLocation) {
+            Log.d(TAG, "GPS ${userLocation.latitude},${userLocation.longitude} outside NL — using Dam Square")
+        }
         map.animateCamera(
-            CameraUpdateFactory.newLatLngZoom(userLocation, 15.0),
+            CameraUpdateFactory.newLatLngZoom(target, 15.0),
             800,
         )
     }
