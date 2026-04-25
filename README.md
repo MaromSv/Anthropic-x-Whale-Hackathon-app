@@ -1,1 +1,0 @@
-# Anthropic-x-Whale-Hackathon
