@@ -54,6 +54,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,6 +74,9 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.example.emergency.offline.MbtilesServer
+import com.example.emergency.offline.OfflineAssets
+import com.example.emergency.offline.OfflineRouter
 import com.google.android.gms.location.LocationServices
 import com.mapbox.geojson.FeatureCollection
 import com.mapbox.geojson.LineString
@@ -93,12 +97,7 @@ import com.mapbox.mapboxsdk.style.layers.PropertyFactory
 import com.mapbox.mapboxsdk.style.layers.SymbolLayer
 import com.mapbox.mapboxsdk.style.sources.GeoJsonOptions
 import com.mapbox.mapboxsdk.style.sources.GeoJsonSource
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 import kotlin.coroutines.resume
 
 private const val TAG = "InteractiveMap"
@@ -204,6 +203,47 @@ fun InteractiveMap(modifier: Modifier = Modifier) {
     // getMapAsync.
     var mapboxMap by remember { mutableStateOf<MapboxMap?>(null) }
 
+    // Offline data plane: stage the bundled segments + MBTiles to filesDir
+    // (one-time, ~470 MB) and stand up a localhost HTTP server that streams
+    // tiles out of the staged MBTiles. The map style is built off that
+    // server's URL so MapLibre never hits the network for tiles.
+    var stagingProgress by remember { mutableStateOf(0 to 1) }
+    var stagingError by remember { mutableStateOf<String?>(null) }
+    var offlinePaths by remember { mutableStateOf<OfflineAssets.Paths?>(null) }
+
+    LaunchedEffect(Unit) {
+        try {
+            offlinePaths = OfflineAssets.ensureStaged(context) { done, total ->
+                stagingProgress = done to total
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Offline asset staging failed", e)
+            stagingError = e.message ?: "Failed to prepare offline data"
+        }
+    }
+
+    // Tile server lives only while the composable is on screen. Re-keying on
+    // [offlinePaths] means a stage-rerun (version bump) cleanly recycles it.
+    val tileServer = remember(offlinePaths) {
+        offlinePaths?.let { MbtilesServer(it.mbtilesFile) }
+    }
+    DisposableEffect(tileServer) {
+        val server = tileServer
+        if (server != null) {
+            try {
+                server.start()
+            } catch (e: Exception) {
+                Log.e(TAG, "MBTiles server failed to start", e)
+                stagingError = "Tile server start failed: ${e.message}"
+            }
+        }
+        onDispose { server?.runCatching { stop() } }
+    }
+
+    val offlineReady by remember {
+        derivedStateOf { offlinePaths != null && tileServer != null }
+    }
+
     LaunchedEffect(Unit) {
         getUserLocation(context)?.let {
             userLocation = if (it.isInNL()) it else DAM_SQUARE
@@ -241,8 +281,12 @@ fun InteractiveMap(modifier: Modifier = Modifier) {
         }
     }
 
-    LaunchedEffect(mapView) {
-        Log.d(TAG, "getMapAsync requested")
+    LaunchedEffect(mapView, tileServer) {
+        // Wait for the local tile server before loading the style — otherwise
+        // MapLibre would synthesize tile URLs against a port that doesn't
+        // exist yet and cache the failure.
+        val server = tileServer ?: return@LaunchedEffect
+        Log.d(TAG, "getMapAsync requested (tile server=${server.tileUrlTemplate})")
         mapView.getMapAsync { map ->
             Log.d(TAG, "MapboxMap ready; setting style")
             mapboxMap = map
@@ -253,7 +297,7 @@ fun InteractiveMap(modifier: Modifier = Modifier) {
                 .target(userLocation)
                 .zoom(14.0)
                 .build()
-            map.setStyle(Style.Builder().fromJson(PDOK_BRT_STYLE)) { style ->
+            map.setStyle(Style.Builder().fromJson(buildOfflineStyle(server.tileUrlTemplate))) { style ->
                 Log.d(TAG, "Style loaded; layers=${style.layers.size}, sources=${style.sources.size}")
                 try {
                     addPoiLayer(context, style)
@@ -295,18 +339,31 @@ fun InteractiveMap(modifier: Modifier = Modifier) {
         )
     }
 
-    // Fetch route whenever (selectedPoi, mode, userLocation) changes.
-    LaunchedEffect(selectedPoi, mode, userLocation) {
+    // Fetch route whenever (selectedPoi, mode, userLocation, offlinePaths)
+    // changes. Re-keying on offlinePaths means the first route after staging
+    // completes runs immediately, instead of stalling on stale null paths.
+    LaunchedEffect(selectedPoi, mode, userLocation, offlinePaths) {
         val poi = selectedPoi ?: run {
             routeResult = null
             routeSource?.setGeoJson(FeatureCollection.fromFeatures(emptyArray()))
             return@LaunchedEffect
         }
+        val paths = offlinePaths ?: return@LaunchedEffect
         routeLoading = true
-        val result = brouterRoute(userLocation, LatLng(poi.lat, poi.lon), mode.brouterProfile)
+        val result = OfflineRouter.route(
+            from = userLocation,
+            to = LatLng(poi.lat, poi.lon),
+            profileName = mode.brouterProfile,
+            segmentsDir = paths.segmentsDir,
+            profilesDir = paths.profilesDir,
+        )
         routeLoading = false
         if (result != null && result.polyline.size > 1) {
-            routeResult = result
+            routeResult = RouteResult(
+                polyline = result.polyline,
+                distanceM = result.distanceM,
+                durationS = result.durationS,
+            )
             val pts = result.polyline.map { Point.fromLngLat(it.longitude, it.latitude) }
             routeSource?.setGeoJson(LineString.fromLngLats(pts))
         } else {
@@ -342,6 +399,57 @@ fun InteractiveMap(modifier: Modifier = Modifier) {
                     .padding(16.dp)
                     .padding(bottom = 24.dp),
             )
+        }
+
+        // First-launch overlay covering the map until the bundled segments +
+        // MBTiles have been copied out to filesDir. After the initial copy,
+        // [OfflineAssets.isStaged] short-circuits and this overlay is gone
+        // before the user sees it.
+        if (!offlineReady || stagingError != null) {
+            StagingOverlay(
+                progress = stagingProgress,
+                error = stagingError,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun StagingOverlay(
+    progress: Pair<Int, Int>,
+    error: String?,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier.background(Color(0xFF111111)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (error != null) {
+                Text(
+                    "Offline maps unavailable",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp,
+                )
+                Spacer(Modifier.size(8.dp))
+                Text(error, color = Color(0xFFCFCFCF), fontSize = 13.sp)
+            } else {
+                CircularProgressIndicator(color = Color.White)
+                Spacer(Modifier.size(16.dp))
+                Text(
+                    "Preparing offline maps…",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.size(4.dp))
+                Text(
+                    "${progress.first} / ${progress.second}",
+                    color = Color(0xFFCFCFCF),
+                    fontSize = 13.sp,
+                )
+            }
         }
     }
 }
@@ -627,37 +735,7 @@ private fun drawableToBitmap(context: Context, resId: Int): Bitmap? {
     return bmp
 }
 
-// ─── Network ─────────────────────────────────────────────────────────────────
-
-private suspend fun brouterRoute(from: LatLng, to: LatLng, profile: String): RouteResult? =
-    withContext(Dispatchers.IO) {
-        try {
-            val url = URL(
-                "https://brouter.de/brouter?lonlats=" +
-                    "${from.longitude},${from.latitude}|${to.longitude},${to.latitude}" +
-                    "&profile=$profile&alternativeidx=0&format=geojson"
-            )
-            val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 15_000
-            conn.readTimeout = 30_000
-            val body = conn.inputStream.bufferedReader().use { it.readText() }
-            val feature = JSONObject(body).getJSONArray("features").getJSONObject(0)
-            val props = feature.getJSONObject("properties")
-            val coords = feature.getJSONObject("geometry").getJSONArray("coordinates")
-            val polyline = (0 until coords.length()).map {
-                val pt = coords.getJSONArray(it)
-                LatLng(pt.getDouble(1), pt.getDouble(0))
-            }
-            RouteResult(
-                polyline = polyline,
-                distanceM = props.getString("track-length").toDouble(),
-                durationS = props.getString("total-time").toDouble(),
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "BRouter failed: $profile", e)
-            null
-        }
-    }
+// ─── GPS ─────────────────────────────────────────────────────────────────────
 
 @SuppressLint("MissingPermission")
 private suspend fun getUserLocation(context: Context): LatLng? {
@@ -675,20 +753,26 @@ private suspend fun getUserLocation(context: Context): LatLng? {
     }
 }
 
-// ─── PDOK basemap style ──────────────────────────────────────────────────────
+// ─── Offline basemap style ───────────────────────────────────────────────────
 
-private const val PDOK_BRT_STYLE = """
+// MapLibre 10.x doesn't ship an mbtiles:// scheme handler, so the offline
+// tile pack is served by [MbtilesServer] over loopback HTTP. The port is
+// OS-assigned at runtime, hence the URL has to be threaded into the style
+// JSON instead of being a constant.
+private fun buildOfflineStyle(tileUrlTemplate: String): String = """
 {
   "version": 8,
   "sources": {
-    "pdok-brt": {
+    "nl-offline": {
       "type": "raster",
-      "tiles": ["https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png"],
+      "tiles": ["$tileUrlTemplate"],
       "tileSize": 256,
+      "minzoom": 5,
+      "maxzoom": 13,
       "attribution": "© Kadaster"
     }
   },
   "layers": [
-    {"id": "pdok-brt-layer", "type": "raster", "source": "pdok-brt"}
+    {"id": "nl-offline-layer", "type": "raster", "source": "nl-offline"}
   ]
 }"""

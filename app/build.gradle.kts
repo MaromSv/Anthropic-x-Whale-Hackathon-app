@@ -37,6 +37,28 @@ android {
     buildFeatures {
         compose = true
     }
+
+    androidResources {
+        // Routing segments and the MBTiles pack are already binary/SQLite —
+        // AAPT compression buys nothing and forces an unnecessary decompress
+        // step before we can copy them out to filesDir. .brf/.dat profiles
+        // are tiny but kept as-is for the same reason.
+        noCompress += listOf("rd5", "mbtiles", "brf", "dat")
+    }
+
+    packaging {
+        resources {
+            // BRouter's all-jar bundles protobuf which carries a license file
+            // that collides with other AARs on Maven Central if we ever pull
+            // one in. Excluding them up-front avoids future merge errors.
+            excludes += listOf(
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1",
+                "META-INF/proguard/**",
+                "META-INF/io.netty.versions.properties",
+            )
+        }
+    }
 }
 
 dependencies {
@@ -61,6 +83,12 @@ dependencies {
     implementation(libs.compose.markdown)
     // Interactive map (MapLibre — uses Mapbox SDK 6 namespace)
     implementation(libs.maplibre.android.sdk)
+    // Offline routing engine (BRouter, vendored as a JAR). The all-jar
+    // bundles protobuf + osmosis-osm-binary so no transitive deps are needed.
+    implementation(files("libs/brouter.jar"))
+    // Localhost tile server: serves /{z}/{x}/{y}.png from the bundled MBTiles
+    // SQLite to MapLibre, which doesn't ship an mbtiles:// scheme handler.
+    implementation(libs.nanohttpd)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
