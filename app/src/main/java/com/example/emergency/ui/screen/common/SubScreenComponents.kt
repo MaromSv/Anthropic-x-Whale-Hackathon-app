@@ -30,6 +30,7 @@ fun SubScreenTopBar(
     title: String,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val colors = EmergencyTheme.colors
     val typography = EmergencyTheme.typography
@@ -67,6 +68,11 @@ fun SubScreenTopBar(
                 .align(Alignment.CenterStart)
                 .padding(start = 56.dp),
         )
+        if (trailing != null) {
+            Box(modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)) {
+                trailing()
+            }
+        }
     }
 }
 

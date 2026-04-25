@@ -32,6 +32,11 @@ object EmergencyTheme {
         @Composable
         @ReadOnlyComposable
         get() = LocalSemanticColors.current
+
+    val toolPalettes: ToolPalettes
+        @Composable
+        @ReadOnlyComposable
+        get() = LocalToolPalettes.current
 }
 
 @Composable
@@ -40,6 +45,7 @@ fun EmergencyTheme(content: @Composable () -> Unit) {
         LocalEmergencyColors provides LightEmergencyColors,
         LocalEmergencyTypography provides DefaultEmergencyTypography,
         LocalSemanticColors provides LightSemanticColors,
+        LocalToolPalettes provides LightToolPalettes,
     ) {
         MaterialTheme(
             colorScheme = MaterialLightScheme,

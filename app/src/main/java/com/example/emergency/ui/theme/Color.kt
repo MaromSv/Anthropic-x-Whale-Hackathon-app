@@ -81,3 +81,46 @@ val LightSemanticColors = SemanticColors(
 )
 
 val LocalSemanticColors = staticCompositionLocalOf { LightSemanticColors }
+
+@Immutable
+data class ToolPalette(
+    val bg: Color,
+    val fg: Color,
+)
+
+@Immutable
+data class ToolPalettes(
+    val firstAid: ToolPalette,
+    val abcCheck: ToolPalette,
+    val map: ToolPalette,
+    val getOut: ToolPalette,
+)
+
+// Tinted bg + saturated fg per design language. Chroma stays ≤ 0.18.
+// Mapped from oklch tokens in DESIGN_LANGUAGE.md / state.jsx.
+val LightToolPalettes = ToolPalettes(
+    firstAid = ToolPalette(bg = Color(0xFFF9DCD3), fg = Color(0xFFC0392B)),
+    abcCheck = ToolPalette(bg = Color(0xFFE0DCEF), fg = Color(0xFF4338CA)),
+    map      = ToolPalette(bg = Color(0xFFD7EBE3), fg = Color(0xFF0F766E)),
+    getOut   = ToolPalette(bg = Color(0xFFF1E5C9), fg = Color(0xFFB45309)),
+)
+
+val LocalToolPalettes = staticCompositionLocalOf { LightToolPalettes }
+
+@Immutable
+data class PackPalette(
+    val light: Color,
+    val dark: Color,
+)
+
+// Two-tone gradients per pack identity. Abstract shape only.
+// Mapped from oklch tokens in packs.jsx.
+val PackPalettes: Map<String, PackPalette> = mapOf(
+    "kingsday-ams"    to PackPalette(Color(0xFFF0B97D), Color(0xFFD2723A)),
+    "ams-base"        to PackPalette(Color(0xFFA9C3DE), Color(0xFF4A6FAB)),
+    "flooding-nl"     to PackPalette(Color(0xFFA9C4DC), Color(0xFF36548E)),
+    "power-outage-nl" to PackPalette(Color(0xFFEFB57E), Color(0xFF3F3850)),
+    "rotterdam-base"  to PackPalette(Color(0xFF9DCCD0), Color(0xFF4D8AA0)),
+)
+
+val DefaultPackPalette = PackPalette(Color(0xFFE7E6E1), Color(0xFFB7B6B0))
