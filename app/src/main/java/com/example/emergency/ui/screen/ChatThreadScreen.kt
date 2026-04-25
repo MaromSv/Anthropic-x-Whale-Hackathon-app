@@ -33,6 +33,13 @@ import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import java.io.File
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.example.emergency.ui.state.ChatMessage
+import com.example.emergency.ui.state.ToolCallInfo
+import java.io.File
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -113,7 +120,16 @@ fun ChatThreadScreen(
                                 UserMessageBubble(text = message.text)
                             }
                         }
+<<<<<<< HEAD
                         ChatRole.ASSISTANT -> AssistantMessageBubble(text = message.text)
+=======
+                        ChatRole.ASSISTANT -> {
+                            if (message.text.isNotEmpty()) {
+                                AssistantMessageBubble(text = message.text)
+                            }
+                        }
+                        ChatRole.TOOL -> ToolCallBubble(toolCall = message.toolCall!!)
+>>>>>>> feature/integrate-map-app-with-maps
                     }
                 }
                 if (state.isAssistantTyping) {
@@ -135,6 +151,10 @@ fun ChatThreadScreen(
             onCamera = onCamera,
             pendingImages = pendingImages,
             onRemoveImage = onRemoveImage,
+<<<<<<< HEAD
+=======
+            modifier = Modifier.navigationBarsPadding(),
+>>>>>>> feature/integrate-map-app-with-maps
         )
     }
 }
@@ -216,8 +236,13 @@ private fun AssistantMessageBubble(text: String) {
                 .border(1.dp, colors.line, EmergencyShapes.card)
                 .padding(horizontal = 14.dp, vertical = 10.dp),
         ) {
+<<<<<<< HEAD
             MarkdownText(
                 markdown = text,
+=======
+            Text(
+                text = text.replace("**", ""),
+>>>>>>> feature/integrate-map-app-with-maps
                 style = typography.body,
                 color = colors.text,
                 modifier = Modifier.fillMaxWidth(),
@@ -259,6 +284,114 @@ private fun AssistantTypingBubble() {
                         .clip(CircleShape)
                         .background(colors.textDim.copy(alpha = alpha)),
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun UserMessageBubbleWithImages(message: ChatMessage) {
+    val colors = EmergencyTheme.colors
+    val typography = EmergencyTheme.typography
+    Row(
+        horizontalArrangement = Arrangement.End,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 280.dp)
+                .clip(EmergencyShapes.card)
+                .background(colors.accent)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            message.imagePaths.forEach { path ->
+                AsyncImage(
+                    model = File(path),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(200.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                )
+            }
+            if (message.text.isNotEmpty()) {
+                Text(
+                    text = message.text,
+                    style = typography.body,
+                    color = colors.accentInk,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolCallBubble(toolCall: ToolCallInfo) {
+    val colors = EmergencyTheme.colors
+    val typography = EmergencyTheme.typography
+    Row(
+        horizontalArrangement = Arrangement.Start,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Box(
+            modifier = Modifier
+                .widthIn(max = 280.dp)
+                .clip(EmergencyShapes.card)
+                .background(
+                    when (toolCall.status) {
+                        "success" -> colors.surface
+                        "error" -> colors.surface.copy(red = 0.3f)
+                        else -> colors.surface
+                    }
+                )
+                .border(
+                    1.dp,
+                    when (toolCall.status) {
+                        "success" -> colors.accent.copy(alpha = 0.5f)
+                        "error" -> colors.line.copy(red = 0.5f)
+                        else -> colors.line
+                    },
+                    EmergencyShapes.card
+                )
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(
+                                when (toolCall.status) {
+                                    "success" -> colors.accent
+                                    "error" -> colors.line.copy(red = 0.8f)
+                                    else -> colors.textDim
+                                }
+                            )
+                    )
+                    Text(
+                        text = when (toolCall.status) {
+                            "calling" -> "Calling ${toolCall.toolName}..."
+                            "success" -> "Used ${toolCall.toolName}"
+                            "error" -> "Error: ${toolCall.toolName}"
+                            else -> toolCall.toolName
+                        },
+                        style = typography.body.copy(fontSize = 13.sp),
+                        color = colors.textDim,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+                if (toolCall.result.isNotEmpty()) {
+                    Text(
+                        text = toolCall.result,
+                        style = typography.body.copy(fontSize = 12.sp),
+                        color = colors.textFaint,
+                    )
+                }
             }
         }
     }

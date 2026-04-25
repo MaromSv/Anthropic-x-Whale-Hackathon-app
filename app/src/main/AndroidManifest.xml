@@ -2,11 +2,21 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+<<<<<<< HEAD
     <uses-permission android:name="android.permission.CAMERA" />
+=======
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    
+>>>>>>> feature/integrate-map-app-with-maps
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
         android:allowBackup="true"
+        android:largeHeap="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
@@ -15,13 +25,20 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Emergency">
+<<<<<<< HEAD
 
         <!-- OpenCL libraries for GPU acceleration (optional) -->
+=======
+        
+>>>>>>> feature/integrate-map-app-with-maps
         <uses-native-library android:name="libOpenCL.so" android:required="false" />
         <uses-native-library android:name="libOpenCL-pixel.so" android:required="false" />
         <uses-native-library android:name="libOpenCL-car.so" android:required="false" />
         <uses-native-library android:name="libvndksupport.so" android:required="false" />
+<<<<<<< HEAD
 
+=======
+>>>>>>> feature/integrate-map-app-with-maps
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -32,8 +49,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+<<<<<<< HEAD
 
         <!-- FileProvider for camera capture -->
+=======
+        
+>>>>>>> feature/integrate-map-app-with-maps
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
