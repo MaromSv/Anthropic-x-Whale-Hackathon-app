@@ -1,6 +1,5 @@
 package com.example.emergency.ui.screen.chat
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,18 +23,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.emergency.ui.screen.map.LiveMiniMap
 import com.example.emergency.ui.state.CrowdDensity
 import com.example.emergency.ui.state.MapSummary
-import com.example.emergency.ui.theme.EmergencyColors
 import com.example.emergency.ui.theme.EmergencyShapes
 import com.example.emergency.ui.theme.EmergencyTheme
-import com.example.emergency.ui.theme.SemanticColors
 
 @Composable
 fun MapPreviewCard(
@@ -62,11 +57,7 @@ fun MapPreviewCard(
                 .height(120.dp)
                 .background(colors.map),
         ) {
-            MapPlaceholder(
-                colors = colors,
-                semantic = semantic,
-                modifier = Modifier.fillMaxSize(),
-            )
+            LiveMiniMap(modifier = Modifier.fillMaxSize())
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -138,53 +129,3 @@ fun MapPreviewCard(
     }
 }
 
-@Composable
-private fun MapPlaceholder(
-    colors: EmergencyColors,
-    semantic: SemanticColors,
-    modifier: Modifier = Modifier,
-) {
-    Box(modifier = modifier) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            for (i in 1..4) {
-                val y = size.height * i / 5
-                drawLine(colors.mapPath, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
-            }
-            for (i in 1..5) {
-                val x = size.width * i / 6
-                drawLine(colors.mapPath, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
-            }
-
-            drawLine(
-                colors.mapWater,
-                Offset(0f, size.height * 0.55f),
-                Offset(size.width, size.height * 0.65f),
-                strokeWidth = 14.dp.toPx(),
-            )
-            drawLine(
-                colors.mapWater,
-                Offset(0f, size.height * 0.78f),
-                Offset(size.width, size.height * 0.86f),
-                strokeWidth = 10.dp.toPx(),
-            )
-
-            val youPos = Offset(size.width * 0.40f, size.height * 0.60f)
-            drawCircle(semantic.youHereHalo, radius = 14.dp.toPx(), center = youPos)
-            drawCircle(semantic.youHere, radius = 5.dp.toPx(), center = youPos)
-
-            val poiPos = Offset(size.width * 0.62f, size.height * 0.30f)
-            drawLine(
-                color = colors.text.copy(alpha = 0.7f),
-                start = youPos,
-                end = poiPos,
-                strokeWidth = 1.5.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)),
-            )
-
-            drawCircle(colors.surface, radius = 9.dp.toPx(), center = poiPos)
-            drawCircle(colors.danger, radius = 9.dp.toPx(), center = poiPos, style = Stroke(width = 1.5.dp.toPx()))
-            drawLine(colors.danger, Offset(poiPos.x - 4.dp.toPx(), poiPos.y), Offset(poiPos.x + 4.dp.toPx(), poiPos.y), strokeWidth = 1.5.dp.toPx())
-            drawLine(colors.danger, Offset(poiPos.x, poiPos.y - 4.dp.toPx()), Offset(poiPos.x, poiPos.y + 4.dp.toPx()), strokeWidth = 1.5.dp.toPx())
-        }
-    }
-}

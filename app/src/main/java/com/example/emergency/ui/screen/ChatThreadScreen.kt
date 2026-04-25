@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import com.example.emergency.ui.screen.chat.ChatInputBar
 import com.example.emergency.ui.screen.chat.CprWalkthroughCard
 import com.example.emergency.ui.screen.chat.MapToolCard
+import com.example.emergency.ui.screen.map.MapDestination
 import org.json.JSONObject
 import com.example.emergency.ui.screen.common.SubScreenTopBar
 import com.example.emergency.ui.state.ChatRole
@@ -62,7 +63,7 @@ fun ChatThreadScreen(
     onGallery: () -> Unit = {},
     pendingImages: List<String> = emptyList(),
     onRemoveImage: (String) -> Unit = {},
-    onOpenTool: (String) -> Unit = {},
+    onOpenTool: (ToolCallInfo) -> Unit = {},
 ) {
     val colors = EmergencyTheme.colors
     val typography = EmergencyTheme.typography
@@ -124,11 +125,15 @@ fun ChatThreadScreen(
                             val toolCall = message.toolCall!!
                             when {
                                 toolCall.toolName == "cpr_instructions" && toolCall.status == "success" ->
-                                    CprWalkthroughCard(onClick = { onOpenTool(toolCall.toolName) })
+                                    CprWalkthroughCard(onClick = { onOpenTool(toolCall) })
                                 toolCall.toolName == "find_nearest" && toolCall.status == "success" -> {
-                                    val title = parseFindNearestTitle(toolCall.result)
-                                    if (title != null) {
-                                        MapToolCard(title = title, onClick = { onOpenTool(toolCall.toolName) })
+                                    val parsed = parseFindNearestCard(toolCall.result)
+                                    if (parsed != null) {
+                                        MapToolCard(
+                                            title = parsed.first,
+                                            destination = parsed.second,
+                                            onClick = { onOpenTool(toolCall) },
+                                        )
                                     } else {
                                         ToolCallBubble(toolCall = toolCall)
                                     }
@@ -358,20 +363,18 @@ private fun ToolCallBubble(toolCall: ToolCallInfo) {
     }
 }
 
-private fun parseFindNearestTitle(raw: String): String? {
+private fun parseFindNearestCard(raw: String): Pair<String, MapDestination>? {
     val trimmed = raw.trim().removeSuffix("...")
     if (!trimmed.startsWith("{")) return null
     return runCatching {
         val obj = JSONObject(trimmed)
-        val name = obj.optString("name").takeIf { it.isNotBlank() }
-        val category = obj.optString("category").takeIf { it.isNotBlank() }
-        val pretty = category?.let { categoryLabel(it) }
-        when {
-            name != null && pretty != null && !name.equals(pretty, ignoreCase = true) -> "$pretty \u00B7 $name"
-            name != null -> name
-            pretty != null -> pretty
-            else -> null
-        }
+        val name = obj.optString("name").takeIf { it.isNotBlank() } ?: return@runCatching null
+        val category = obj.optString("category").takeIf { it.isNotBlank() } ?: return@runCatching null
+        val lat = obj.optDouble("lat", Double.NaN).takeIf { !it.isNaN() } ?: return@runCatching null
+        val lon = obj.optDouble("lon", Double.NaN).takeIf { !it.isNaN() } ?: return@runCatching null
+        val pretty = categoryLabel(category)
+        val title = if (!name.equals(pretty, ignoreCase = true)) "$pretty \u00B7 $name" else name
+        title to MapDestination(name, category, lat, lon)
     }.getOrNull()
 }
 

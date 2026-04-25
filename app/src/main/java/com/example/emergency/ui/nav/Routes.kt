@@ -1,5 +1,6 @@
 package com.example.emergency.ui.nav
 
+import android.net.Uri
 import com.example.emergency.ui.state.DrawerItemId
 import com.example.emergency.ui.state.ToolId
 
@@ -9,7 +10,10 @@ sealed class Route(val path: String) {
     data object PersonalInfo : Route("personal_info")
     data object Conversations : Route("conversations")
     data object ChatThread : Route("chat_thread")
-    data object Map : Route("map")
+    data object Map : Route("map?lat={lat}&lon={lon}&name={name}&category={category}") {
+        fun withDestination(lat: Double, lon: Double, name: String, category: String): String =
+            "map?lat=$lat&lon=$lon&name=${Uri.encode(name)}&category=${Uri.encode(category)}"
+    }
     data object FirstAid : Route("first_aid")
     data object AbcCheck : Route("abc_check")
     data object GetOut : Route("get_out")

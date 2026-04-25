@@ -17,9 +17,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.example.emergency.agent.ToolManager
 import com.example.emergency.llm.GemmaBackend
 import com.example.emergency.llm.GemmaLlm
@@ -37,6 +39,7 @@ import com.example.emergency.ui.screen.FirstAidScreen
 import com.example.emergency.ui.screen.GetOutScreen
 import com.example.emergency.ui.screen.HomeShell
 import com.example.emergency.ui.screen.MapScreen
+import com.example.emergency.ui.screen.map.MapDestination
 import com.example.emergency.ui.screen.PersonalInfoScreen
 import com.example.emergency.ui.screen.SettingsScreen
 import com.example.emergency.ui.screen.cpr.CprWalkthroughScreen
@@ -385,10 +388,18 @@ fun AppNavHost() {
                 onGallery = { onGallery() },
                 pendingImages = pendingImages,
                 onRemoveImage = { path -> onRemoveImage(path) },
-                onOpenTool = { name ->
-                    when (name) {
+                onOpenTool = { toolCall ->
+                    when (toolCall.toolName) {
                         "cpr_instructions" -> navController.navigate(Route.CprWalkthrough.path)
-                        "find_nearest" -> navController.navigate(Route.Map.path)
+                        "find_nearest" -> {
+                            val dest = parseFindNearestDestination(toolCall.result)
+                            val target = if (dest != null) {
+                                Route.Map.withDestination(dest.lat, dest.lon, dest.name, dest.category)
+                            } else {
+                                "map"
+                            }
+                            navController.navigate(target)
+                        }
                     }
                 },
             )
@@ -411,10 +422,26 @@ fun AppNavHost() {
                 onBack = { navController.popBackStack() },
             )
         }
-        composable(Route.Map.path) {
+        composable(
+            Route.Map.path,
+            arguments = listOf(
+                navArgument("lat") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("lon") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("name") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("category") { type = NavType.StringType; nullable = true; defaultValue = null },
+            ),
+        ) { entry ->
+            val lat = entry.arguments?.getString("lat")?.toDoubleOrNull()
+            val lon = entry.arguments?.getString("lon")?.toDoubleOrNull()
+            val name = entry.arguments?.getString("name")
+            val category = entry.arguments?.getString("category")
+            val dest = if (lat != null && lon != null && !name.isNullOrBlank() && !category.isNullOrBlank()) {
+                MapDestination(name, category, lat, lon)
+            } else null
             MapScreen(
                 state = SampleMapUiState,
                 onBack = { navController.popBackStack() },
+                initialDestination = dest,
             )
         }
         composable(Route.FirstAid.path) {
@@ -487,4 +514,17 @@ search_medical_database
 query=burn treatment
 </tool_call>
     """.trimIndent()
+}
+
+private fun parseFindNearestDestination(raw: String): MapDestination? {
+    val trimmed = raw.trim().removeSuffix("...")
+    if (!trimmed.startsWith("{")) return null
+    return runCatching {
+        val obj = org.json.JSONObject(trimmed)
+        val name = obj.optString("name").takeIf { it.isNotBlank() } ?: return@runCatching null
+        val category = obj.optString("category").takeIf { it.isNotBlank() } ?: return@runCatching null
+        val lat = obj.optDouble("lat", Double.NaN).takeIf { !it.isNaN() } ?: return@runCatching null
+        val lon = obj.optDouble("lon", Double.NaN).takeIf { !it.isNaN() } ?: return@runCatching null
+        MapDestination(name, category, lat, lon)
+    }.getOrNull()
 }

@@ -74,6 +74,7 @@ import androidx.core.app.ActivityCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.google.android.gms.location.LocationServices
+import com.mapbox.geojson.Feature
 import com.mapbox.geojson.FeatureCollection
 import com.mapbox.geojson.LineString
 import com.mapbox.geojson.Point
@@ -82,6 +83,7 @@ import com.mapbox.mapboxsdk.WellKnownTileServer
 import com.mapbox.mapboxsdk.camera.CameraPosition
 import com.mapbox.mapboxsdk.camera.CameraUpdateFactory
 import com.mapbox.mapboxsdk.geometry.LatLng
+import com.mapbox.mapboxsdk.geometry.LatLngBounds
 import com.mapbox.mapboxsdk.maps.MapView
 import com.mapbox.mapboxsdk.maps.MapboxMap
 import com.mapbox.mapboxsdk.maps.MapboxMapOptions
@@ -102,15 +104,15 @@ import java.net.URL
 import kotlin.coroutines.resume
 
 private const val TAG = "InteractiveMap"
-private val DAM_SQUARE = LatLng(52.3731, 4.8926)
+internal val DAM_SQUARE = LatLng(52.3731, 4.8926)
 
 // PDOK basemap only covers the Netherlands; outside this bbox we keep the
 // camera anchored to Dam Square instead of flying into a tile-less void
 // (most commonly the emulator's default Mountain View location).
-private val NL_BBOX_SW = LatLng(50.7, 3.3)
-private val NL_BBOX_NE = LatLng(53.6, 7.3)
+internal val NL_BBOX_SW = LatLng(50.7, 3.3)
+internal val NL_BBOX_NE = LatLng(53.6, 7.3)
 
-private fun LatLng.isInNL(): Boolean =
+internal fun LatLng.isInNL(): Boolean =
     latitude in NL_BBOX_SW.latitude..NL_BBOX_NE.latitude &&
         longitude in NL_BBOX_SW.longitude..NL_BBOX_NE.longitude
 
@@ -124,7 +126,7 @@ private val POI_CATEGORIES = listOf(
 
 private data class Poi(val name: String, val category: String, val lat: Double, val lon: Double)
 
-private data class RouteResult(
+internal data class RouteResult(
     val polyline: List<LatLng>,
     val distanceM: Double,
     val durationS: Double,
@@ -188,7 +190,10 @@ private fun categoryColor(category: String): Color = when (category) {
  * Activity.
  */
 @Composable
-fun InteractiveMap(modifier: Modifier = Modifier) {
+fun InteractiveMap(
+    modifier: Modifier = Modifier,
+    initialDestination: MapDestination? = null,
+) {
     val context = LocalContext.current
 
     // Idempotent — MapLibre guards internally against re-entry. Keeping it
@@ -197,11 +202,16 @@ fun InteractiveMap(modifier: Modifier = Modifier) {
     remember { Mapbox.getInstance(context, null, WellKnownTileServer.MapLibre) }
 
     var mode by remember { mutableStateOf(Mode.Walk) }
-    var selectedPoi by remember { mutableStateOf<Poi?>(null) }
+    var selectedPoi by remember {
+        mutableStateOf<Poi?>(
+            initialDestination?.let { Poi(it.name, it.category, it.lat, it.lon) }
+        )
+    }
     var routeResult by remember { mutableStateOf<RouteResult?>(null) }
     var routeLoading by remember { mutableStateOf(false) }
     var userLocation by remember { mutableStateOf(DAM_SQUARE) }
     var routeSource by remember { mutableStateOf<GeoJsonSource?>(null) }
+    var userLocationSource by remember { mutableStateOf<GeoJsonSource?>(null) }
     // Captured once the underlying MapboxMap is ready so other effects can
     // animate the camera (e.g., to the user's GPS fix) without re-entering
     // getMapAsync.
@@ -261,7 +271,8 @@ fun InteractiveMap(modifier: Modifier = Modifier) {
                 try {
                     addPoiLayer(context, style)
                     routeSource = addRouteLayer(style)
-                    Log.d(TAG, "POI + route layers attached")
+                    userLocationSource = addUserLocationLayer(style)
+                    Log.d(TAG, "POI + route + user-location layers attached")
                 } catch (e: Exception) {
                     Log.e(TAG, "Layer setup failed", e)
                 }
@@ -286,16 +297,28 @@ fun InteractiveMap(modifier: Modifier = Modifier) {
     // a user location has resolved. The PDOK basemap only covers NL, so if
     // the GPS reports somewhere else we stay on Dam Square — otherwise the
     // user sees a black void of un-tiled ocean.
-    LaunchedEffect(mapboxMap, userLocation) {
+    LaunchedEffect(mapboxMap, userLocation, initialDestination) {
         val map = mapboxMap ?: return@LaunchedEffect
         val target = if (userLocation.isInNL()) userLocation else DAM_SQUARE
         if (target !== userLocation) {
             Log.d(TAG, "GPS ${userLocation.latitude},${userLocation.longitude} outside NL — using Dam Square")
         }
-        map.animateCamera(
-            CameraUpdateFactory.newLatLngZoom(target, 15.0),
-            800,
-        )
+        val update = if (initialDestination != null) {
+            val dest = LatLng(initialDestination.lat, initialDestination.lon)
+            val bounds = LatLngBounds.Builder().include(target).include(dest).build()
+            // 180px padding leaves room for the top mode selector and the
+            // bottom route info card without cropping either endpoint.
+            CameraUpdateFactory.newLatLngBounds(bounds, 180)
+        } else {
+            CameraUpdateFactory.newLatLngZoom(target, 15.0)
+        }
+        map.animateCamera(update, 800)
+    }
+
+    LaunchedEffect(userLocationSource, userLocation) {
+        val src = userLocationSource ?: return@LaunchedEffect
+        val pt = Point.fromLngLat(userLocation.longitude, userLocation.latitude)
+        src.setGeoJson(Feature.fromGeometry(pt))
     }
 
     // Fetch route whenever (selectedPoi, mode, userLocation) changes.
@@ -614,9 +637,33 @@ private fun addRouteLayer(style: Style): GeoJsonSource {
     return source
 }
 
+// Two stacked circles: a translucent halo so the dot stays visible over busy
+// basemap colors, and the solid blue puck on top with a white ring (matches
+// the standard Maps you-are-here treatment).
+private fun addUserLocationLayer(style: Style): GeoJsonSource {
+    val source = GeoJsonSource("user-location-source")
+    style.addSource(source)
+    style.addLayer(
+        CircleLayer("user-location-halo", "user-location-source").withProperties(
+            PropertyFactory.circleColor("#1E88E5"),
+            PropertyFactory.circleOpacity(0.18f),
+            PropertyFactory.circleRadius(18f),
+        ),
+    )
+    style.addLayer(
+        CircleLayer("user-location-dot", "user-location-source").withProperties(
+            PropertyFactory.circleColor("#1E88E5"),
+            PropertyFactory.circleRadius(7f),
+            PropertyFactory.circleStrokeColor("#FFFFFF"),
+            PropertyFactory.circleStrokeWidth(2.5f),
+        ),
+    )
+    return source
+}
+
 // ─── Network ─────────────────────────────────────────────────────────────────
 
-private suspend fun brouterRoute(from: LatLng, to: LatLng, profile: String): RouteResult? =
+internal suspend fun brouterRoute(from: LatLng, to: LatLng, profile: String): RouteResult? =
     withContext(Dispatchers.IO) {
         try {
             val url = URL(
@@ -647,7 +694,7 @@ private suspend fun brouterRoute(from: LatLng, to: LatLng, profile: String): Rou
     }
 
 @SuppressLint("MissingPermission")
-private suspend fun getUserLocation(context: Context): LatLng? {
+internal suspend fun getUserLocation(context: Context): LatLng? {
     val granted = ActivityCompat.checkSelfPermission(
         context, Manifest.permission.ACCESS_FINE_LOCATION
     ) == PackageManager.PERMISSION_GRANTED
@@ -664,7 +711,7 @@ private suspend fun getUserLocation(context: Context): LatLng? {
 
 // ─── PDOK basemap style ──────────────────────────────────────────────────────
 
-private const val PDOK_BRT_STYLE = """
+internal const val PDOK_BRT_STYLE = """
 {
   "version": 8,
   "sources": {
