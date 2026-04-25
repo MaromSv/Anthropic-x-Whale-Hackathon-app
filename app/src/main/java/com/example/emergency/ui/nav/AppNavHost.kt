@@ -362,10 +362,10 @@ fun AppNavHost() {
                 homeState = SampleHomeUiState,
                 drawerState = SampleDrawerUiState,
                 onToolClick = { id ->
-                    navController.navigate(id.toRoute().path)
+                    navController.navigate(id.toRoute().navigatePath)
                 },
                 onDrawerItemClick = { id ->
-                    navController.navigate(id.toRoute().path)
+                    navController.navigate(id.toRoute().navigatePath)
                 },
                 onSend = { text ->
                     sendUserMessage(text)
@@ -373,6 +373,10 @@ fun AppNavHost() {
                         launchSingleTop = true
                     }
                 },
+                onCamera = { onCamera() },
+                onGallery = { onGallery() },
+                pendingImages = pendingImages,
+                onRemoveImage = { path -> onRemoveImage(path) },
             )
         }
         composable(Route.ChatThread.path) {

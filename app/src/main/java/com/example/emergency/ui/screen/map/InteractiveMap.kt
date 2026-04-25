@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,7 +26,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsBike
@@ -45,12 +45,9 @@ import androidx.compose.material.icons.filled.LocalPolice
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.School
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -66,10 +63,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.example.emergency.ui.theme.EmergencyShapes
+import com.example.emergency.ui.theme.EmergencyTheme
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -378,37 +375,39 @@ private fun ModeSelector(
     onSelect: (Mode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(50),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+    val colors = EmergencyTheme.colors
+    val typography = EmergencyTheme.typography
+
+    Row(
+        modifier = modifier
+            .clip(EmergencyShapes.full)
+            .background(colors.surface)
+            .border(1.dp, colors.line, EmergencyShapes.full)
+            .padding(4.dp),
     ) {
-        Row(modifier = Modifier.padding(4.dp)) {
-            Mode.entries.forEach { m ->
-                val selected = m == current
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
-                        .clickable { onSelect(m) }
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            m.icon,
-                            contentDescription = m.label,
-                            tint = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            m.label,
-                            color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                        )
-                    }
-                }
+        Mode.entries.forEach { m ->
+            val selected = m == current
+            val fg = if (selected) colors.accentInk else colors.text
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(EmergencyShapes.full)
+                    .background(if (selected) colors.accent else Color.Transparent)
+                    .clickable { onSelect(m) }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
+                Icon(
+                    m.icon,
+                    contentDescription = m.label,
+                    tint = fg,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = m.label,
+                    style = typography.listItem,
+                    color = fg,
+                )
             }
         }
     }
@@ -424,37 +423,42 @@ private fun RouteInfoCard(
     modifier: Modifier = Modifier,
 ) {
     poi ?: return
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+    val colors = EmergencyTheme.colors
+    val typography = EmergencyTheme.typography
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(EmergencyShapes.hero)
+            .background(colors.surface)
+            .border(1.dp, colors.line, EmergencyShapes.hero),
     ) {
         Row(
-            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier = Modifier
                     .size(56.dp)
                     .clip(CircleShape)
-                    .background(categoryColor(poi.category)),
+                    .background(colors.panel),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     categoryIcon(poi.category),
                     contentDescription = poi.category,
-                    tint = Color.White,
-                    modifier = Modifier.size(30.dp),
+                    tint = categoryColor(poi.category),
+                    modifier = Modifier.size(28.dp),
                 )
             }
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    poi.name,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF111111),
+                    text = poi.name,
+                    style = typography.listItem,
+                    color = colors.text,
                     maxLines = 2,
                 )
                 Spacer(Modifier.size(4.dp))
@@ -463,20 +467,33 @@ private fun RouteInfoCard(
                         CircularProgressIndicator(
                             modifier = Modifier.size(14.dp),
                             strokeWidth = 2.dp,
+                            color = colors.textDim,
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("Calculating route…", fontSize = 13.sp, color = Color.Gray)
+                        Text(
+                            text = "Calculating route…",
+                            style = typography.helper,
+                            color = colors.textDim,
+                        )
                     }
                     route != null -> Text(
-                        "${formatDistance(route.distanceM)}  ·  ${formatDuration(route.durationS)} ${mode.label.lowercase()}",
-                        fontSize = 14.sp,
-                        color = Color(0xFF555555),
+                        text = "${formatDistance(route.distanceM)}  ·  ${formatDuration(route.durationS)} ${mode.label.lowercase()}",
+                        style = typography.helper,
+                        color = colors.textDim,
                     )
-                    else -> Text("Routing failed", fontSize = 13.sp, color = Color(0xFFB71C1C))
+                    else -> Text(
+                        text = "Routing failed",
+                        style = typography.helper,
+                        color = colors.danger,
+                    )
                 }
             }
             IconButton(onClick = onDismiss) {
-                Icon(Icons.Default.Close, contentDescription = "Close")
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "Close",
+                    tint = colors.textFaint,
+                )
             }
         }
     }
