@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Cache dir is where ChatViewModel writes camera + picked images. -->
+    <cache-path name="cache_images" path="." />
+</paths>

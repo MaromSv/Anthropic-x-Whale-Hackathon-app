@@ -1,15 +1,25 @@
+# Android / Gradle
+**/build/
+**/.gradle/
+android/local.properties
+android/app/release/
+*.keystore
+!android/app/debug.keystore
+
+# Models (too large for git, push via adb)
+*.litertlm
+*.task
+*.bin
+
+# IDE
+.idea/
 *.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
+.vscode/
+
+# OS
 .DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
-local.properties
+Thumbs.db
+
+# Node / Expo legacy (keep ignoring)
+node_modules/
+.expo/
