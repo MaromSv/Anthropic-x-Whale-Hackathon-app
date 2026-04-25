@@ -32,7 +32,7 @@ val SampleHomeUiState = HomeUiState(
         density = CrowdDensity.HIGH,
     ),
     tools = listOf(
-        ToolTile(ToolId.FIRST_AID, "CPR", ""),
-        ToolTile(ToolId.ABC_CHECK, "ABC check", ""),
+        ToolTile(ToolId.FIRST_AID, "CPR aid", ""),
+        ToolTile(ToolId.ABC_CHECK, "ABC aid", ""),
     ),
 )
