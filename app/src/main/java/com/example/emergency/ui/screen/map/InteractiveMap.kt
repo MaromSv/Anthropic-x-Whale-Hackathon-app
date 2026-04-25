@@ -54,7 +54,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,6 +76,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.example.emergency.offline.MbtilesServer
 import com.example.emergency.offline.OfflineAssets
+import com.example.emergency.offline.OfflineBootstrap
 import com.example.emergency.offline.OfflineRouter
 import com.google.android.gms.location.LocationServices
 import com.mapbox.geojson.FeatureCollection
@@ -203,27 +204,20 @@ fun InteractiveMap(modifier: Modifier = Modifier) {
     // getMapAsync.
     var mapboxMap by remember { mutableStateOf<MapboxMap?>(null) }
 
-    // Offline data plane: stage the bundled segments + MBTiles to filesDir
-    // (one-time, ~470 MB) and stand up a localhost HTTP server that streams
-    // tiles out of the staged MBTiles. The map style is built off that
-    // server's URL so MapLibre never hits the network for tiles.
-    var stagingProgress by remember { mutableStateOf(0 to 1) }
-    var stagingError by remember { mutableStateOf<String?>(null) }
-    var offlinePaths by remember { mutableStateOf<OfflineAssets.Paths?>(null) }
-
-    LaunchedEffect(Unit) {
-        try {
-            offlinePaths = OfflineAssets.ensureStaged(context) { done, total ->
-                stagingProgress = done to total
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Offline asset staging failed", e)
-            stagingError = e.message ?: "Failed to prepare offline data"
-        }
-    }
+    // Offline data plane: staging is kicked off at process start by
+    // [com.example.emergency.EmergencyApp], so by the time the map screen
+    // mounts the copy is usually already done. We observe the shared state
+    // here instead of starting the work ourselves. While staging is still
+    // running, the map UI stays interactive — only the tile server / route
+    // engine wait for paths to become available.
+    val bootstrapStatus by OfflineBootstrap.state.collectAsState()
+    val offlinePaths: OfflineAssets.Paths? =
+        (bootstrapStatus as? OfflineBootstrap.Status.Ready)?.paths
+    var tileServerStartError by remember { mutableStateOf<String?>(null) }
 
     // Tile server lives only while the composable is on screen. Re-keying on
-    // [offlinePaths] means a stage-rerun (version bump) cleanly recycles it.
+    // [offlinePaths] means it spins up the moment staging completes, even if
+    // the user was already on the map screen.
     val tileServer = remember(offlinePaths) {
         offlinePaths?.let { MbtilesServer(it.mbtilesFile) }
     }
@@ -232,16 +226,13 @@ fun InteractiveMap(modifier: Modifier = Modifier) {
         if (server != null) {
             try {
                 server.start()
+                tileServerStartError = null
             } catch (e: Exception) {
                 Log.e(TAG, "MBTiles server failed to start", e)
-                stagingError = "Tile server start failed: ${e.message}"
+                tileServerStartError = "Tile server start failed: ${e.message}"
             }
         }
         onDispose { server?.runCatching { stop() } }
-    }
-
-    val offlineReady by remember {
-        derivedStateOf { offlinePaths != null && tileServer != null }
     }
 
     LaunchedEffect(Unit) {
@@ -348,7 +339,12 @@ fun InteractiveMap(modifier: Modifier = Modifier) {
             routeSource?.setGeoJson(FeatureCollection.fromFeatures(emptyArray()))
             return@LaunchedEffect
         }
-        val paths = offlinePaths ?: return@LaunchedEffect
+        val paths = offlinePaths ?: run {
+            // Staging not done yet — UI shows "Calculating route…" via
+            // [routeLoading] so the user knows we'll route once data lands.
+            routeLoading = true
+            return@LaunchedEffect
+        }
         routeLoading = true
         val result = OfflineRouter.route(
             from = userLocation,
@@ -401,54 +397,76 @@ fun InteractiveMap(modifier: Modifier = Modifier) {
             )
         }
 
-        // First-launch overlay covering the map until the bundled segments +
-        // MBTiles have been copied out to filesDir. After the initial copy,
-        // [OfflineAssets.isStaged] short-circuits and this overlay is gone
-        // before the user sees it.
-        if (!offlineReady || stagingError != null) {
-            StagingOverlay(
-                progress = stagingProgress,
-                error = stagingError,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
+        // Small non-blocking progress pill, only visible while the bootstrap
+        // is mid-copy (or has errored out). The map stays fully interactive —
+        // mode selector, GPS dot, POI taps all work; tiles just render once
+        // the local server comes up.
+        StagingPill(
+            status = bootstrapStatus,
+            tileServerError = tileServerStartError,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 64.dp),
+        )
     }
 }
 
+/**
+ * Slim non-blocking progress pill. Renders at the top of the map while the
+ * offline bundle is still being staged (or if something failed). Hidden once
+ * staging is [OfflineBootstrap.Status.Ready].
+ */
 @Composable
-private fun StagingOverlay(
-    progress: Pair<Int, Int>,
-    error: String?,
+private fun StagingPill(
+    status: OfflineBootstrap.Status,
+    tileServerError: String?,
     modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = modifier.background(Color(0xFF111111)),
-        contentAlignment = Alignment.Center,
+    val errorText = (status as? OfflineBootstrap.Status.Failed)?.message
+        ?: tileServerError
+    val staging = status as? OfflineBootstrap.Status.Staging
+
+    AnimatedVisibility(
+        visible = errorText != null || staging != null,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = modifier,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            if (error != null) {
-                Text(
-                    "Offline maps unavailable",
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 16.sp,
-                )
-                Spacer(Modifier.size(8.dp))
-                Text(error, color = Color(0xFFCFCFCF), fontSize = 13.sp)
-            } else {
-                CircularProgressIndicator(color = Color.White)
-                Spacer(Modifier.size(16.dp))
-                Text(
-                    "Preparing offline maps…",
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.size(4.dp))
-                Text(
-                    "${progress.first} / ${progress.second}",
-                    color = Color(0xFFCFCFCF),
-                    fontSize = 13.sp,
-                )
+        Card(
+            shape = RoundedCornerShape(50),
+            colors = CardDefaults.cardColors(
+                containerColor = if (errorText != null) Color(0xFFB71C1C) else Color(0xFF111111),
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (errorText == null) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    val pct = staging?.let {
+                        if (it.total > 0) (it.done * 100 / it.total) else 0
+                    } ?: 0
+                    Text(
+                        "Preparing offline maps… $pct%",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                } else {
+                    Text(
+                        "Offline data unavailable",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
         }
     }

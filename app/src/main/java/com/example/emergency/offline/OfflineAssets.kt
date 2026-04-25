@@ -5,6 +5,8 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 
 /**
  * Stages the large bundled blobs (BRouter segments + profiles + the NL
@@ -148,17 +150,28 @@ object OfflineAssets {
         PROFILE_FILES.size + SEGMENT_FILES.size + /* mbtiles */ 1
 
     private fun copyAsset(context: Context, assetPath: String, dest: File) {
-        // Stream in 1 MB chunks. AssetManager streams aren't seekable so we
-        // can't memory-map; for files this size, copyTo with a 1 MB buffer
-        // is comfortably faster than the default 8 KB.
         val tmp = File(dest.parentFile, "${dest.name}.partial")
-        context.assets.open(assetPath).use { input ->
-            tmp.outputStream().use { output ->
-                val buf = ByteArray(1 shl 20)
-                while (true) {
-                    val n = input.read(buf)
-                    if (n <= 0) break
-                    output.write(buf, 0, n)
+        // Fast path: openFd() works because every large asset is in the
+        // noCompress list (.rd5/.mbtiles/.brf/.dat). The returned descriptor
+        // points at a byte range *inside* the APK file itself, which lets us
+        // ask the kernel to do the copy via FileChannel.transferTo() →
+        // sendfile(2) on Linux. Skips the JVM-side 1 MB bounce buffer and
+        // halves staging time on flash storage.
+        val afd = context.assets.openFd(assetPath)
+        afd.use {
+            FileInputStream(it.fileDescriptor).channel.use { src ->
+                FileOutputStream(tmp).channel.use { dst ->
+                    val length = it.length
+                    val baseOffset = it.startOffset
+                    var copied = 0L
+                    while (copied < length) {
+                        val n = src.transferTo(baseOffset + copied, length - copied, dst)
+                        if (n <= 0) break
+                        copied += n
+                    }
+                    if (copied != length) {
+                        error("Short read on $assetPath: $copied/$length bytes")
+                    }
                 }
             }
         }
