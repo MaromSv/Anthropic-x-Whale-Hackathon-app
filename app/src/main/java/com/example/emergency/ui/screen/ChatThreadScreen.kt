@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -41,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import dev.jeziellago.compose.markdowntext.MarkdownText
 import com.example.emergency.ui.screen.chat.ChatInputBar
 import com.example.emergency.ui.screen.common.SubScreenTopBar
 import com.example.emergency.ui.state.ChatRole
@@ -74,7 +76,9 @@ fun ChatThreadScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.bg)
-            .statusBarsPadding(),
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding(),
     ) {
         SubScreenTopBar(title = state.title, onBack = onBack)
 
@@ -131,7 +135,6 @@ fun ChatThreadScreen(
             onCamera = onCamera,
             pendingImages = pendingImages,
             onRemoveImage = onRemoveImage,
-            modifier = Modifier.navigationBarsPadding(),
         )
     }
 }
@@ -213,10 +216,11 @@ private fun AssistantMessageBubble(text: String) {
                 .border(1.dp, colors.line, EmergencyShapes.card)
                 .padding(horizontal = 14.dp, vertical = 10.dp),
         ) {
-            Text(
-                text = text,
+            MarkdownText(
+                markdown = text,
                 style = typography.body,
                 color = colors.text,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
