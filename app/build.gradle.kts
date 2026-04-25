@@ -59,6 +59,8 @@ dependencies {
     implementation(libs.coil.compose)
     // Markdown rendering
     implementation(libs.compose.markdown)
+    // Interactive map (MapLibre — uses Mapbox SDK 6 namespace)
+    implementation(libs.maplibre.android.sdk)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
