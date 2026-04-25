@@ -291,9 +291,9 @@ fun AppNavHost() {
                                 )
                             }
 
-                            // CPR is fully handled by the walkthrough card — no follow-up
-                            // LLM response needed (and a second bubble would be confusing).
-                            if (toolCall.toolName == "cpr_instructions") {
+                            // CPR and ABC are fully handled by their walkthrough cards — no
+                            // follow-up LLM response needed (a second bubble confuses).
+                            if (toolCall.toolName == "cpr_instructions" || toolCall.toolName == "abc_check") {
                                 continue
                             }
 
@@ -410,6 +410,7 @@ fun AppNavHost() {
                 onOpenTool = { toolCall ->
                     when (toolCall.toolName) {
                         "cpr_instructions" -> navController.navigate(Route.CprWalkthrough.path)
+                        "abc_check" -> navController.navigate(Route.AbcCheck.path)
                         "find_nearest" -> {
                             val dest = parseFindNearestDestination(toolCall.result)
                             val target = if (dest != null) {
@@ -474,7 +475,11 @@ fun AppNavHost() {
             AbcCheckScreen(
                 state = SampleAbcCheckUiState,
                 onBack = { navController.popBackStack() },
-                onStartCpr = { navController.navigate(Route.CprWalkthrough.path) },
+                onStartCpr = {
+                    navController.navigate(Route.CprWalkthrough.path) {
+                        popUpTo(Route.AbcCheck.path) { inclusive = true }
+                    }
+                },
             )
         }
         composable(Route.CprWalkthrough.path) {
@@ -504,7 +509,8 @@ ${toolManager.getToolDescriptions()}
 
 **How to choose a tool:**
 - Image of a wound, cut, severe bleeding, or any tourniquet question → call `search_medical_database` with `query=tourniquet`.
-- Anything mentioning CPR, unresponsive, not breathing, no pulse, cardiac arrest → call `cpr_instructions` (no parameters).
+- Anything mentioning CPR, no pulse, or cardiac arrest → call `cpr_instructions` (no parameters).
+- "Unresponsive", "passed out", "fainted", "won't wake up", "not moving", or asking how to check someone before CPR → call `abc_check` (no parameters).
 - Asking to hide, find a shelter, reach safety, or get directions to a safe place → call `get_location` with `destination=nearest shelter`.
 
 **Output rules:**
@@ -517,6 +523,12 @@ User: "I need CPR guidance"
 Assistant:
 <tool_call>
 cpr_instructions
+</tool_call>
+
+User: "Someone collapsed and isn't responding — what do I check first?"
+Assistant:
+<tool_call>
+abc_check
 </tool_call>
 
 User: "Where is the nearest shelter I can hide at?"

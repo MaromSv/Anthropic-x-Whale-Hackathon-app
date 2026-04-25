@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import com.example.emergency.ui.screen.chat.AbcCheckCard
 import com.example.emergency.ui.screen.chat.ChatInputBar
 import com.example.emergency.ui.screen.chat.CprWalkthroughCard
 import com.example.emergency.ui.screen.chat.MapToolCard
@@ -127,6 +128,8 @@ fun ChatThreadScreen(
                             when {
                                 toolCall.toolName == "cpr_instructions" && toolCall.status == "success" ->
                                     CprWalkthroughCard(onClick = { onOpenTool(toolCall) })
+                                toolCall.toolName == "abc_check" && toolCall.status == "success" ->
+                                    AbcCheckCard(onClick = { onOpenTool(toolCall) })
                                 toolCall.toolName == "find_nearest" && toolCall.status == "success" -> {
                                     val parsed = parseFindNearestCard(toolCall.result)
                                     if (parsed != null) {

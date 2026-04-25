@@ -1,6 +1,7 @@
 package com.example.emergency.agent
 
 import android.content.Context
+import com.example.emergency.agent.tools.AbcCheckTool
 import com.example.emergency.agent.tools.CprTool
 import com.example.emergency.agent.tools.FindNearestTool
 import com.example.emergency.agent.tools.GpsLocationTool
@@ -18,6 +19,7 @@ class ToolManager(context: Context) {
             GpsLocationTool(context).getTool(),
             MedicalRagTool(context).getTool(),
             CprTool().getTool(),
+            AbcCheckTool().getTool(),
             FindNearestTool(context).getTool(),
         )
         
