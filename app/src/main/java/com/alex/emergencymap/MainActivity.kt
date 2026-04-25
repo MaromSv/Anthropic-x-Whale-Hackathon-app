@@ -81,9 +81,9 @@ fun MapScreen() {
             map.setStyle(Style.Builder().fromJson(PDOK_BRT_STYLE)) { style ->
                 Log.d(TAG, "Style loaded, layers=${style.layers.size}, sources=${style.sources.size}")
             }
-            map.addOnDidFailLoadingMapListener { msg ->
-                Log.e(TAG, "Map failed to load: $msg")
-            }
+        }
+        mapView.addOnDidFailLoadingMapListener { msg ->
+            Log.e(TAG, "Map failed to load: $msg")
         }
     }
 
