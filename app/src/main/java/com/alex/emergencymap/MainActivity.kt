@@ -17,6 +17,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.alex.emergencymap.ui.theme.EmergencyMapTheme
 import com.mapbox.mapboxsdk.Mapbox
+import com.mapbox.mapboxsdk.WellKnownTileServer
 import com.mapbox.mapboxsdk.camera.CameraPosition
 import com.mapbox.mapboxsdk.geometry.LatLng
 import com.mapbox.mapboxsdk.maps.MapView
@@ -25,6 +26,7 @@ import com.mapbox.mapboxsdk.maps.Style
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Mapbox.getInstance(this, null, WellKnownTileServer.MapLibre)
         setContent {
             EmergencyMapTheme {
                 MapScreen()
@@ -36,8 +38,6 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MapScreen() {
     val context = LocalContext.current
-
-    LaunchedEffect(Unit) { Mapbox.getInstance(context) }
 
     val mapView = remember {
         MapView(context).apply {
