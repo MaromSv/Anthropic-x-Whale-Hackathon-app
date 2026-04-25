@@ -250,9 +250,16 @@ fun MapScreen() {
 
     LaunchedEffect(mapView) {
         mapView.getMapAsync { map ->
-            map.cameraPosition = CameraPosition.Builder()
+            // Fit camera to all POIs at startup.
+            val bounds = com.mapbox.mapboxsdk.geometry.LatLngBounds.Builder().apply {
+                POIS.forEach { include(LatLng(it.lat, it.lon)) }
+            }.build()
+            map.cameraPosition = map.getCameraForLatLngBounds(
+                bounds,
+                intArrayOf(120, 120, 280, 120),  // L, T, R, B padding for top chips & bottom card
+            ) ?: CameraPosition.Builder()
                 .target(LatLng(52.3676, 4.9041))
-                .zoom(12.5)
+                .zoom(11.0)
                 .build()
             map.setStyle(Style.Builder().fromJson(PDOK_BRT_STYLE)) { style ->
                 Log.d(TAG, "Style loaded")
