@@ -1,15 +1,19 @@
 package com.alex.emergencymap
 
+import android.graphics.Color
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
@@ -22,6 +26,8 @@ import com.mapbox.mapboxsdk.camera.CameraPosition
 import com.mapbox.mapboxsdk.geometry.LatLng
 import com.mapbox.mapboxsdk.maps.MapView
 import com.mapbox.mapboxsdk.maps.Style
+
+private const val TAG = "EmergencyMap"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,16 +71,26 @@ fun MapScreen() {
     }
 
     LaunchedEffect(mapView) {
+        Log.d(TAG, "LaunchedEffect: requesting map")
         mapView.getMapAsync { map ->
+            Log.d(TAG, "getMapAsync callback: map ready, setting camera + style")
             map.cameraPosition = CameraPosition.Builder()
                 .target(LatLng(52.3676, 4.9041))
                 .zoom(13.0)
                 .build()
-            map.setStyle(Style.Builder().fromJson(PDOK_BRT_STYLE))
+            map.setStyle(Style.Builder().fromJson(PDOK_BRT_STYLE)) { style ->
+                Log.d(TAG, "Style loaded, layers=${style.layers.size}, sources=${style.sources.size}")
+            }
+            map.addOnDidFailLoadingMapListener { msg ->
+                Log.e(TAG, "Map failed to load: $msg")
+            }
         }
     }
 
-    AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
+    AndroidView(
+        factory = { mapView },
+        modifier = Modifier.fillMaxSize().background(ComposeColor.Magenta),
+    )
 }
 
 private const val PDOK_BRT_STYLE = """
