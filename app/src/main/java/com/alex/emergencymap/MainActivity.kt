@@ -230,8 +230,13 @@ fun MapScreen() {
 
     LaunchedEffect(Unit) {
         getUserLocation(context)?.let {
-            userLocation = it
-            Log.d(TAG, "User location: ${it.latitude}, ${it.longitude}")
+            userLocation = if (it.isInNL()) it else DAM_SQUARE
+            Log.d(
+                TAG,
+                "GPS fix ${it.latitude},${it.longitude} → using " +
+                        "${userLocation.latitude},${userLocation.longitude}" +
+                        if (!it.isInNL()) " (out of NL — clamped to Dam Square)" else "",
+            )
         } ?: Log.d(TAG, "No GPS — falling back to Dam Square")
     }
 
