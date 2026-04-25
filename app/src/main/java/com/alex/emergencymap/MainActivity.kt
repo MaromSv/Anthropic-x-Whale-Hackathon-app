@@ -87,6 +87,9 @@ fun MapScreen() {
         mapView.addOnDidFailLoadingMapListener { msg ->
             Log.e(TAG, "Map failed to load: $msg")
         }
+        mapView.addOnDidFinishLoadingMapListener {
+            Log.d(TAG, "Map FULLY loaded (style + visible tiles all done)")
+        }
     }
 
     AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
