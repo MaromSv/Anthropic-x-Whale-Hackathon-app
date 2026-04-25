@@ -8,6 +8,7 @@ sealed class Route(val path: String) {
     data object DataPacks : Route("data_packs")
     data object PersonalInfo : Route("personal_info")
     data object Conversations : Route("conversations")
+    data object ChatThread : Route("chat_thread")
     data object Map : Route("map")
     data object FirstAid : Route("first_aid")
     data object AbcCheck : Route("abc_check")
