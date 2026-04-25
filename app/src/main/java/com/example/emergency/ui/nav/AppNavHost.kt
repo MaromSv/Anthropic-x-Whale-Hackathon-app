@@ -341,6 +341,10 @@ fun AppNavHost() {
         pendingCameraPath = imageFile.absolutePath
         requestCameraPermission.launch(android.Manifest.permission.CAMERA)
     }
+    
+    fun onGallery() {
+        pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
 
     fun onRemoveImage(path: String) {
         pendingImages.remove(path)
@@ -378,6 +382,7 @@ fun AppNavHost() {
                 onBack = { navController.popBackStack() },
                 onSend = { text -> sendUserMessage(text) },
                 onCamera = { onCamera() },
+                onGallery = { onGallery() },
                 pendingImages = pendingImages,
                 onRemoveImage = { path -> onRemoveImage(path) },
                 onOpenTool = { name ->
