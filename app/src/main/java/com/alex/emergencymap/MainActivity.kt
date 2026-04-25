@@ -87,8 +87,10 @@ import com.mapbox.geojson.Point
 import com.mapbox.mapboxsdk.Mapbox
 import com.mapbox.mapboxsdk.WellKnownTileServer
 import com.mapbox.mapboxsdk.camera.CameraPosition
+import com.mapbox.mapboxsdk.camera.CameraUpdateFactory
 import com.mapbox.mapboxsdk.geometry.LatLng
 import com.mapbox.mapboxsdk.maps.MapView
+import com.mapbox.mapboxsdk.maps.MapboxMap
 import com.mapbox.mapboxsdk.maps.MapboxMapOptions
 import com.mapbox.mapboxsdk.maps.Style
 import com.mapbox.mapboxsdk.style.expressions.Expression
@@ -215,6 +217,10 @@ fun MapScreen() {
     var routeLoading by remember { mutableStateOf(false) }
     var userLocation by remember { mutableStateOf(DAM_SQUARE) }
     var routeSource by remember { mutableStateOf<GeoJsonSource?>(null) }
+    // Captured once the underlying MapboxMap is ready so other effects can
+    // animate the camera (e.g., to the user's GPS fix) without re-entering
+    // getMapAsync.
+    var mapboxMap by remember { mutableStateOf<MapboxMap?>(null) }
 
     LaunchedEffect(Unit) {
         getUserLocation(context)?.let {
@@ -250,18 +256,13 @@ fun MapScreen() {
 
     LaunchedEffect(mapView) {
         mapView.getMapAsync { map ->
-            // Fit camera to the whole NL bbox so the user can immediately see
-            // pins/clusters across the country before zooming in.
-            val bounds = com.mapbox.mapboxsdk.geometry.LatLngBounds.Builder()
-                .include(NL_BBOX_SW)
-                .include(NL_BBOX_NE)
-                .build()
-            map.cameraPosition = map.getCameraForLatLngBounds(
-                bounds,
-                intArrayOf(60, 100, 60, 200),
-            ) ?: CameraPosition.Builder()
-                .target(LatLng(52.1326, 5.2913))
-                .zoom(7.0)
+            mapboxMap = map
+            // Open at city-level zoom on whatever location we currently have
+            // (Dam Square fallback). The LaunchedEffect below will animate to
+            // the real GPS fix as soon as it resolves.
+            map.cameraPosition = CameraPosition.Builder()
+                .target(userLocation)
+                .zoom(14.0)
                 .build()
             map.setStyle(Style.Builder().fromJson(PDOK_BRT_STYLE)) { style ->
                 Log.d(TAG, "Style loaded")
@@ -282,6 +283,17 @@ fun MapScreen() {
                 } else false
             }
         }
+    }
+
+    // Animate the map to the current GPS fix once both the map is ready and
+    // a user location has resolved. Re-runs whenever userLocation changes,
+    // which in practice fires once when GPS replaces the Dam Square fallback.
+    LaunchedEffect(mapboxMap, userLocation) {
+        val map = mapboxMap ?: return@LaunchedEffect
+        map.animateCamera(
+            CameraUpdateFactory.newLatLngZoom(userLocation, 15.0),
+            800,
+        )
     }
 
     // Fetch route whenever (selectedPoi, mode, userLocation) changes.
@@ -478,19 +490,28 @@ private fun addPoiLayer(context: Context, style: Style) {
     val source = GeoJsonSource("pois-source", options)
     style.addSource(source)
 
-    // Reading 30+ MB off disk on the UI thread would freeze the launch frame,
-    // so we offload to a worker and push the data back onto the map thread.
+    // The bundled GeoJSON is ~32 MB; reading it as a Kotlin String would
+    // allocate ~128 MB on the Java heap (UTF-16 + StringBuilder doubling) and
+    // OOM mid-launch. Instead we stream it to internal storage with a bounded
+    // buffer and hand MapLibre a file:// URI so the parse happens natively.
+    //
+    // We copy once per install (existence check). When the bundled asset is
+    // updated, the next reinstall replaces filesDir so the copy refreshes
+    // automatically; for in-place dev iteration, clear app data.
     Thread {
         try {
-            val raw = context.assets.open("pois-nl.geojson")
-                .bufferedReader()
-                .use { it.readText() }
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                source.setGeoJson(raw)
+            val outFile = java.io.File(context.filesDir, "pois-nl.geojson")
+            if (!outFile.exists()) {
+                context.assets.open("pois-nl.geojson").use { input ->
+                    outFile.outputStream().use { output -> input.copyTo(output) }
+                }
+                Log.d(TAG, "Copied pois-nl.geojson (${outFile.length() / 1024} KB) to ${outFile.absolutePath}")
             }
-            Log.d(TAG, "Loaded pois-nl.geojson (${raw.length / 1024} KB)")
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                source.setUri(outFile.toURI().toString())
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to load pois-nl.geojson", e)
+            Log.e(TAG, "Failed to stage pois-nl.geojson", e)
         }
     }.start()
 
