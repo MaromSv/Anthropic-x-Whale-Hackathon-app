@@ -12,11 +12,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -28,10 +25,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import coil.compose.AsyncImage
-import java.io.File
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -49,7 +42,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import dev.jeziellago.compose.markdowntext.MarkdownText
 import com.example.emergency.ui.screen.chat.ChatInputBar
 import com.example.emergency.ui.screen.common.SubScreenTopBar
 import com.example.emergency.ui.state.ChatRole
@@ -83,9 +75,7 @@ fun ChatThreadScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.bg)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .imePadding(),
+            .statusBarsPadding(),
     ) {
         SubScreenTopBar(title = state.title, onBack = onBack)
 
@@ -177,43 +167,6 @@ private fun UserMessageBubble(text: String) {
 }
 
 @Composable
-private fun UserMessageBubbleWithImages(message: com.example.emergency.ui.state.ChatMessage) {
-    val colors = EmergencyTheme.colors
-    val typography = EmergencyTheme.typography
-    Row(
-        horizontalArrangement = Arrangement.End,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier
-                .widthIn(max = 280.dp)
-                .clip(EmergencyShapes.card)
-                .background(colors.accent)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            message.imagePaths.forEach { path ->
-                AsyncImage(
-                    model = File(path),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(200.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                )
-            }
-            if (message.text.isNotEmpty()) {
-                Text(
-                    text = message.text,
-                    style = typography.body,
-                    color = colors.accentInk,
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun AssistantMessageBubble(text: String) {
     val colors = EmergencyTheme.colors
     val typography = EmergencyTheme.typography
@@ -233,7 +186,6 @@ private fun AssistantMessageBubble(text: String) {
                 text = text.replace("**", ""),
                 style = typography.body,
                 color = colors.text,
-                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
