@@ -34,6 +34,7 @@ class GemmaLlm(private val context: Context) {
 
     private var engine: Engine? = null
     private var conversation: Conversation? = null
+    private var conversationConfig: ConversationConfig? = null
 
     val isLoaded: Boolean get() = engine != null
 
@@ -73,12 +74,26 @@ class GemmaLlm(private val context: Context) {
         )
 
         conversation = newEngine.createConversation(convConfig)
+        conversationConfig = convConfig
         engine = newEngine
+    }
+
+    /**
+     * Drops the current conversation history and starts fresh, reusing the
+     * loaded engine and the same system prompt + sampler config. Cheap —
+     * no model reload.
+     */
+    fun resetConversation() {
+        val e = engine ?: throw ModelNotLoadedException()
+        val cfg = conversationConfig ?: throw ModelNotLoadedException()
+        conversation?.close()
+        conversation = e.createConversation(cfg)
     }
 
     fun unload() {
         conversation?.close()
         conversation = null
+        conversationConfig = null
         engine?.close()
         engine = null
     }

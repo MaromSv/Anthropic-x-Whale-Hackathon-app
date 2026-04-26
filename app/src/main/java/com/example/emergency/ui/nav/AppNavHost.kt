@@ -138,6 +138,12 @@ fun AppNavHost() {
         onDispose { gemma.unload() }
     }
 
+    fun startNewChat() {
+        threadMessages.clear()
+        pendingImages.clear()
+        if (gemma.isLoaded) gemma.resetConversation()
+    }
+
     fun sendUserMessage(text: String) {
         val userIndex = threadMessages.size
         val images = pendingImages.toList()
@@ -388,6 +394,7 @@ fun AppNavHost() {
                         launchSingleTop = true
                     }
                 },
+                onNewChatClick = { startNewChat() },
                 onCamera = { onCamera() },
                 onGallery = { onGallery() },
                 pendingImages = pendingImages,
@@ -402,6 +409,10 @@ fun AppNavHost() {
                     isAssistantTyping = isAssistantTyping,
                 ),
                 onBack = { navController.popBackStack() },
+                onNewChat = {
+                    startNewChat()
+                    navController.popBackStack(Route.Home.path, inclusive = false)
+                },
                 onSend = { text -> sendUserMessage(text) },
                 onCamera = { onCamera() },
                 onGallery = { onGallery() },

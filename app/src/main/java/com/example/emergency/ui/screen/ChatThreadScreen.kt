@@ -24,6 +24,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.layout.ContentScale
@@ -65,6 +69,7 @@ fun ChatThreadScreen(
     pendingImages: List<String> = emptyList(),
     onRemoveImage: (String) -> Unit = {},
     onOpenTool: (ToolCallInfo) -> Unit = {},
+    onNewChat: () -> Unit = {},
 ) {
     val colors = EmergencyTheme.colors
     val typography = EmergencyTheme.typography
@@ -85,7 +90,20 @@ fun ChatThreadScreen(
             .statusBarsPadding()
             .imePadding(),
     ) {
-        SubScreenTopBar(title = state.title, onBack = onBack)
+        SubScreenTopBar(
+            title = state.title,
+            onBack = onBack,
+            trailing = {
+                IconButton(onClick = onNewChat) {
+                    Icon(
+                        imageVector = Icons.Outlined.Add,
+                        contentDescription = "New chat",
+                        tint = colors.text,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            },
+        )
 
         if (state.messages.isEmpty() && !state.isAssistantTyping) {
             Box(
