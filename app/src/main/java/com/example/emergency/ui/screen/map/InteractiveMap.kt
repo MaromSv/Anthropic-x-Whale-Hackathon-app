@@ -4,8 +4,10 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.RectF
+import android.graphics.drawable.BitmapDrawable
 import android.util.Log
 import android.view.View
 import androidx.compose.animation.AnimatedVisibility
@@ -26,25 +28,25 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsBike
 import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.DirectionsSubway
 import androidx.compose.material.icons.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocalAtm
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.LocalGasStation
 import androidx.compose.material.icons.filled.LocalGroceryStore
 import androidx.compose.material.icons.filled.LocalHospital
-import androidx.compose.material.icons.filled.LocalParking
 import androidx.compose.material.icons.filled.LocalPharmacy
 import androidx.compose.material.icons.filled.LocalPolice
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Place
-import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,6 +54,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,13 +66,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.emergency.ui.theme.EmergencyShapes
 import com.example.emergency.ui.theme.EmergencyTheme
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.example.emergency.offline.MbtilesServer
+import com.example.emergency.offline.OfflineAssets
+import com.example.emergency.offline.OfflineBootstrap
+import com.example.emergency.offline.OfflineRouter
 import com.google.android.gms.location.LocationServices
 import com.mapbox.geojson.Feature
 import com.mapbox.geojson.FeatureCollection
@@ -101,6 +111,12 @@ import java.net.URL
 import kotlin.coroutines.resume
 
 private const val TAG = "InteractiveMap"
+
+// Bump whenever app/src/main/assets/pois-nl.geojson changes. The first launch
+// after an upgrade will overwrite the cached copy in filesDir; otherwise the
+// device keeps showing whatever was bundled at install time.
+private const val POI_BUNDLE_VERSION = 2
+
 internal val DAM_SQUARE = LatLng(52.3731, 4.8926)
 
 // PDOK basemap only covers the Netherlands; outside this bbox we keep the
@@ -113,12 +129,12 @@ internal fun LatLng.isInNL(): Boolean =
     latitude in NL_BBOX_SW.latitude..NL_BBOX_NE.latitude &&
         longitude in NL_BBOX_SW.longitude..NL_BBOX_NE.longitude
 
-// All POI categories produced by data-pipeline/extract_pois.py. Listed once so
-// icon registration, color stops and bottom-card mappings stay in sync.
+// POI categories present in assets/pois-nl.geojson. Listed once so icon
+// registration, color stops and bottom-card mappings stay in sync.
 private val POI_CATEGORIES = listOf(
     "hospital", "doctor", "first_aid", "aed", "pharmacy", "police", "fire",
-    "shelter", "water", "toilet", "metro", "parking_underground", "bunker",
-    "fuel", "supermarket", "atm", "phone", "school", "community", "worship",
+    "water", "toilet", "bunker",
+    "fuel", "supermarket", "atm", "phone",
 )
 
 private data class Poi(val name: String, val category: String, val lat: Double, val lon: Double)
@@ -141,14 +157,11 @@ private fun categoryIcon(category: String): ImageVector = when (category) {
     "pharmacy"            -> Icons.Default.LocalPharmacy
     "police"              -> Icons.Default.LocalPolice
     "fire"                -> Icons.Default.LocalFireDepartment
-    "shelter"             -> Icons.Default.Home
-    "metro"               -> Icons.Default.DirectionsSubway
+    "bunker"              -> Icons.Default.Shield
     "fuel"                -> Icons.Default.LocalGasStation
     "supermarket"         -> Icons.Default.LocalGroceryStore
     "atm"                 -> Icons.Default.LocalAtm
     "phone"               -> Icons.Default.Phone
-    "school"              -> Icons.Default.School
-    "parking_underground" -> Icons.Default.LocalParking
     else                  -> Icons.Default.Place
 }
 
@@ -160,19 +173,13 @@ private fun categoryColor(category: String): Color = when (category) {
     "pharmacy"            -> Color(0xFF43A047)
     "police"              -> Color(0xFF1E40AF)
     "fire"                -> Color(0xFFB71C1C)
-    "shelter"             -> Color(0xFF00897B)
     "water"               -> Color(0xFF29B6F6)
     "toilet"              -> Color(0xFF6D4C41)
-    "metro"               -> Color(0xFF5E35B1)
-    "parking_underground" -> Color(0xFF455A64)
     "bunker"              -> Color(0xFF424242)
     "fuel"                -> Color(0xFFF9A825)
     "supermarket"         -> Color(0xFF7CB342)
     "atm"                 -> Color(0xFF00ACC1)
     "phone"               -> Color(0xFF8E24AA)
-    "school"              -> Color(0xFFFFB300)
-    "community"           -> Color(0xFF3949AB)
-    "worship"             -> Color(0xFF6A1B9A)
     else                  -> Color(0xFF757575)
 }
 
@@ -215,6 +222,37 @@ fun InteractiveMap(
     // getMapAsync.
     var mapboxMap by remember { mutableStateOf<MapboxMap?>(null) }
 
+    // Offline data plane: staging is kicked off at process start by
+    // [com.example.emergency.EmergencyApp], so by the time the map screen
+    // mounts the copy is usually already done. We observe the shared state
+    // here instead of starting the work ourselves. While staging is still
+    // running, the map UI stays interactive — only the tile server / route
+    // engine wait for paths to become available.
+    val bootstrapStatus by OfflineBootstrap.state.collectAsState()
+    val offlinePaths: OfflineAssets.Paths? =
+        (bootstrapStatus as? OfflineBootstrap.Status.Ready)?.paths
+    var tileServerStartError by remember { mutableStateOf<String?>(null) }
+
+    // Tile server lives only while the composable is on screen. Re-keying on
+    // [offlinePaths] means it spins up the moment staging completes, even if
+    // the user was already on the map screen.
+    val tileServer = remember(offlinePaths) {
+        offlinePaths?.let { MbtilesServer(it.mbtilesFile) }
+    }
+    DisposableEffect(tileServer) {
+        val server = tileServer
+        if (server != null) {
+            try {
+                server.start()
+                tileServerStartError = null
+            } catch (e: Exception) {
+                Log.e(TAG, "MBTiles server failed to start", e)
+                tileServerStartError = "Tile server start failed: ${e.message}"
+            }
+        }
+        onDispose { server?.runCatching { stop() } }
+    }
+
     LaunchedEffect(Unit) {
         getUserLocation(context)?.let {
             userLocation = if (it.isInNL()) it else DAM_SQUARE
@@ -252,8 +290,12 @@ fun InteractiveMap(
         }
     }
 
-    LaunchedEffect(mapView) {
-        Log.d(TAG, "getMapAsync requested")
+    LaunchedEffect(mapView, tileServer) {
+        // Wait for the local tile server before loading the style — otherwise
+        // MapLibre would synthesize tile URLs against a port that doesn't
+        // exist yet and cache the failure.
+        val server = tileServer ?: return@LaunchedEffect
+        Log.d(TAG, "getMapAsync requested (tile server=${server.tileUrlTemplate})")
         mapView.getMapAsync { map ->
             Log.d(TAG, "MapboxMap ready; setting style")
             mapboxMap = map
@@ -264,7 +306,7 @@ fun InteractiveMap(
                 .target(userLocation)
                 .zoom(14.0)
                 .build()
-            map.setStyle(Style.Builder().fromJson(PDOK_BRT_STYLE)) { style ->
+            map.setStyle(Style.Builder().fromJson(buildOfflineStyle(server.tileUrlTemplate))) { style ->
                 Log.d(TAG, "Style loaded; layers=${style.layers.size}, sources=${style.sources.size}")
                 try {
                     addPoiLayer(context, style)
@@ -341,18 +383,36 @@ fun InteractiveMap(
         }
     }
 
-    // Fetch route whenever (selectedPoi, mode, userLocation) changes.
-    LaunchedEffect(selectedPoi, mode, userLocation) {
+    // Fetch route whenever (selectedPoi, mode, userLocation, offlinePaths)
+    // changes. Re-keying on offlinePaths means the first route after staging
+    // completes runs immediately, instead of stalling on stale null paths.
+    LaunchedEffect(selectedPoi, mode, userLocation, offlinePaths) {
         val poi = selectedPoi ?: run {
             routeResult = null
             routeSource?.setGeoJson(FeatureCollection.fromFeatures(emptyArray()))
             return@LaunchedEffect
         }
+        val paths = offlinePaths ?: run {
+            // Staging not done yet — UI shows "Calculating route…" via
+            // [routeLoading] so the user knows we'll route once data lands.
+            routeLoading = true
+            return@LaunchedEffect
+        }
         routeLoading = true
-        val result = brouterRoute(userLocation, LatLng(poi.lat, poi.lon), mode.brouterProfile)
+        val result = OfflineRouter.route(
+            from = userLocation,
+            to = LatLng(poi.lat, poi.lon),
+            profileName = mode.brouterProfile,
+            segmentsDir = paths.segmentsDir,
+            profilesDir = paths.profilesDir,
+        )
         routeLoading = false
         if (result != null && result.polyline.size > 1) {
-            routeResult = result
+            routeResult = RouteResult(
+                polyline = result.polyline,
+                distanceM = result.distanceM,
+                durationS = result.durationS,
+            )
             val pts = result.polyline.map { Point.fromLngLat(it.longitude, it.latitude) }
             routeSource?.setGeoJson(LineString.fromLngLats(pts))
         } else {
@@ -388,6 +448,79 @@ fun InteractiveMap(
                     .padding(16.dp)
                     .padding(bottom = 24.dp),
             )
+        }
+
+        // Small non-blocking progress pill, only visible while the bootstrap
+        // is mid-copy (or has errored out). The map stays fully interactive —
+        // mode selector, GPS dot, POI taps all work; tiles just render once
+        // the local server comes up.
+        StagingPill(
+            status = bootstrapStatus,
+            tileServerError = tileServerStartError,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 64.dp),
+        )
+    }
+}
+
+/**
+ * Slim non-blocking progress pill. Renders at the top of the map while the
+ * offline bundle is still being staged (or if something failed). Hidden once
+ * staging is [OfflineBootstrap.Status.Ready].
+ */
+@Composable
+private fun StagingPill(
+    status: OfflineBootstrap.Status,
+    tileServerError: String?,
+    modifier: Modifier = Modifier,
+) {
+    val errorText = (status as? OfflineBootstrap.Status.Failed)?.message
+        ?: tileServerError
+    val staging = status as? OfflineBootstrap.Status.Staging
+
+    AnimatedVisibility(
+        visible = errorText != null || staging != null,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = modifier,
+    ) {
+        Card(
+            shape = RoundedCornerShape(50),
+            colors = CardDefaults.cardColors(
+                containerColor = if (errorText != null) Color(0xFFB71C1C) else Color(0xFF111111),
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (errorText == null) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    val pct = staging?.let {
+                        if (it.total > 0) (it.done * 100 / it.total) else 0
+                    } ?: 0
+                    Text(
+                        "Preparing offline maps… $pct%",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                } else {
+                    Text(
+                        "Offline data unavailable",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
         }
     }
 }
@@ -533,14 +666,13 @@ private fun formatDuration(seconds: Double): String {
 // ─── Map layers ──────────────────────────────────────────────────────────────
 
 // Adds the POI source + layers to the style. POIs are loaded from
-// app/src/main/assets/pois-nl.geojson (produced by data-pipeline/extract_pois.py)
-// and aggregated client-side via MapLibre clustering — without that, rendering
-// 128k+ pins at low zoom levels would stutter.
+// app/src/main/assets/pois-nl.geojson and aggregated client-side via MapLibre
+// clustering — without that, rendering dense pins at low zoom would stutter.
 private fun addPoiLayer(context: Context, style: Style) {
     POI_CATEGORIES.forEach { name ->
         val resId = context.resources.getIdentifier("ic_poi_$name", "drawable", context.packageName)
         if (resId != 0) {
-            BitmapFactory.decodeResource(context.resources, resId)?.let { bmp ->
+            drawableToBitmap(context, resId)?.let { bmp ->
                 style.addImage("$name-icon", bmp)
             }
         }
@@ -564,11 +696,20 @@ private fun addPoiLayer(context: Context, style: Style) {
     Thread {
         try {
             val outFile = java.io.File(context.filesDir, "pois-nl.geojson")
-            if (!outFile.exists()) {
-                Log.d(TAG, "Copying pois-nl.geojson from assets…")
+            val versionFile = java.io.File(context.filesDir, "pois-nl.version")
+            val cachedVersion = versionFile.takeIf { it.exists() }
+                ?.runCatching { readText().trim().toInt() }?.getOrNull() ?: -1
+            val needsCopy = !outFile.exists() || cachedVersion != POI_BUNDLE_VERSION
+            if (needsCopy) {
+                Log.d(
+                    TAG,
+                    "Copying pois-nl.geojson from assets (cached=$cachedVersion, " +
+                        "current=$POI_BUNDLE_VERSION)…",
+                )
                 context.assets.open("pois-nl.geojson").use { input ->
                     outFile.outputStream().use { output -> input.copyTo(output) }
                 }
+                versionFile.writeText(POI_BUNDLE_VERSION.toString())
                 Log.d(TAG, "Copied pois-nl.geojson (${outFile.length() / 1024} KB) to ${outFile.absolutePath}")
             } else {
                 Log.d(TAG, "Reusing existing pois-nl.geojson (${outFile.length() / 1024} KB)")
@@ -595,19 +736,13 @@ private fun addPoiLayer(context: Context, style: Style) {
         Expression.stop("pharmacy",            "#43A047"),
         Expression.stop("police",              "#1E40AF"),
         Expression.stop("fire",                "#B71C1C"),
-        Expression.stop("shelter",             "#00897B"),
         Expression.stop("water",               "#29B6F6"),
         Expression.stop("toilet",              "#6D4C41"),
-        Expression.stop("metro",               "#5E35B1"),
-        Expression.stop("parking_underground", "#455A64"),
         Expression.stop("bunker",              "#424242"),
         Expression.stop("fuel",                "#F9A825"),
         Expression.stop("supermarket",         "#7CB342"),
         Expression.stop("atm",                 "#00ACC1"),
         Expression.stop("phone",               "#8E24AA"),
-        Expression.stop("school",              "#FFB300"),
-        Expression.stop("community",           "#3949AB"),
-        Expression.stop("worship",             "#6A1B9A"),
     )
 
     val unclustered = Expression.not(Expression.has("point_count"))
@@ -737,8 +872,24 @@ private fun addSelectedDestinationLayer(style: Style): GeoJsonSource {
     return source
 }
 
+// `BitmapFactory.decodeResource` returns null for vector drawables, so we
+// rasterize via Drawable.draw() ourselves. Falls back to a 96px square when
+// the drawable has no intrinsic size (raw shapes).
+private fun drawableToBitmap(context: Context, resId: Int): Bitmap? {
+    val drawable = ContextCompat.getDrawable(context, resId) ?: return null
+    if (drawable is BitmapDrawable) return drawable.bitmap
+    val w = drawable.intrinsicWidth.takeIf { it > 0 } ?: 96
+    val h = drawable.intrinsicHeight.takeIf { it > 0 } ?: 96
+    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    drawable.setBounds(0, 0, w, h)
+    drawable.draw(Canvas(bmp))
+    return bmp
+}
+
 // ─── Network ─────────────────────────────────────────────────────────────────
 
+// Online BRouter fallback. Used by [LiveMiniMap] for the chat-card route
+// preview; the full [InteractiveMap] uses the offline router instead.
 internal suspend fun brouterRoute(from: LatLng, to: LatLng, profile: String): RouteResult? =
     withContext(Dispatchers.IO) {
         try {
@@ -769,6 +920,8 @@ internal suspend fun brouterRoute(from: LatLng, to: LatLng, profile: String): Ro
         }
     }
 
+// ─── GPS ─────────────────────────────────────────────────────────────────────
+
 @SuppressLint("MissingPermission")
 internal suspend fun getUserLocation(context: Context): LatLng? {
     val granted = ActivityCompat.checkSelfPermission(
@@ -785,8 +938,32 @@ internal suspend fun getUserLocation(context: Context): LatLng? {
     }
 }
 
-// ─── PDOK basemap style ──────────────────────────────────────────────────────
+// ─── Basemap styles ──────────────────────────────────────────────────────────
 
+// MapLibre 10.x doesn't ship an mbtiles:// scheme handler, so the offline
+// tile pack is served by [MbtilesServer] over loopback HTTP. The port is
+// OS-assigned at runtime, hence the URL has to be threaded into the style
+// JSON instead of being a constant.
+private fun buildOfflineStyle(tileUrlTemplate: String): String = """
+{
+  "version": 8,
+  "sources": {
+    "nl-offline": {
+      "type": "raster",
+      "tiles": ["$tileUrlTemplate"],
+      "tileSize": 256,
+      "minzoom": 5,
+      "maxzoom": 13,
+      "attribution": "© Kadaster"
+    }
+  },
+  "layers": [
+    {"id": "nl-offline-layer", "type": "raster", "source": "nl-offline"}
+  ]
+}"""
+
+// Online PDOK BRT style. Retained for [LiveMiniMap], which is a small
+// preview surface that does not warrant the offline tile-server pipeline.
 internal const val PDOK_BRT_STYLE = """
 {
   "version": 8,
