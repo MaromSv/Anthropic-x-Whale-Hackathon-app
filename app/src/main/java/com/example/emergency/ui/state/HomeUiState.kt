@@ -24,15 +24,15 @@ data class HomeUiState(
 )
 
 val SampleHomeUiState = HomeUiState(
-    greeting = "What's happening?",
-    subtitle = "Tell me, or jump straight to a tool below.",
+    greeting = "How can I help?",
+    subtitle = "Describe the situation, or pick a tool below.",
     mapSummary = MapSummary(
         title = "Around you",
         sub = "3 medical \u00B7 4 exits \u00B7 2 shelters",
         density = CrowdDensity.HIGH,
     ),
     tools = listOf(
-        ToolTile(ToolId.FIRST_AID, "CPR aid", ""),
-        ToolTile(ToolId.ABC_CHECK, "ABC aid", ""),
+        ToolTile(ToolId.FIRST_AID, "CPR Guide", "Chest compressions"),
+        ToolTile(ToolId.ABC_CHECK, "Vital Signs", "ABC assessment"),
     ),
 )

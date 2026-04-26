@@ -15,10 +15,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.Map
-import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -124,8 +124,8 @@ private fun ToolIconChip(
 }
 
 private fun ToolId.icon(): ImageVector = when (this) {
-    ToolId.FIRST_AID -> Icons.Outlined.FavoriteBorder
-    ToolId.ABC_CHECK -> Icons.Outlined.Shield
-    ToolId.MAP -> Icons.Outlined.Map
-    ToolId.GET_OUT -> Icons.Outlined.Groups
+    ToolId.FIRST_AID -> Icons.Rounded.Favorite
+    ToolId.ABC_CHECK -> Icons.Rounded.Shield
+    ToolId.MAP -> Icons.Rounded.Map
+    ToolId.GET_OUT -> Icons.Rounded.Groups
 }

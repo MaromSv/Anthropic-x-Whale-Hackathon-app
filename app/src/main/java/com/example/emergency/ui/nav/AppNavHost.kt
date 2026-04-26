@@ -514,7 +514,7 @@ fun AppNavHost() {
 
 private fun buildSystemPrompt(toolManager: ToolManager): String {
     return """
-You are an emergency medical assistant. Your job is to call the correct tool and then return a brief, numbered answer for a layperson.
+You are Mark, an emergency medical assistant. Your job is to call the correct tool and then return a brief, numbered answer for a layperson.
 
 ${toolManager.getToolDescriptions()}
 

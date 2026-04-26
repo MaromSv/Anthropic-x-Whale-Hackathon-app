@@ -291,8 +291,8 @@ private fun UserMessageBubbleWithImages(message: ChatMessage) {
                 .widthIn(max = 280.dp)
                 .clip(EmergencyShapes.card)
                 .background(colors.accent)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             message.imagePaths.forEach { path ->
                 AsyncImage(
@@ -300,7 +300,7 @@ private fun UserMessageBubbleWithImages(message: ChatMessage) {
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(200.dp)
+                        .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp)),
                 )
             }
@@ -309,6 +309,7 @@ private fun UserMessageBubbleWithImages(message: ChatMessage) {
                     text = message.text,
                     style = typography.body,
                     color = colors.accentInk,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 )
             }
         }

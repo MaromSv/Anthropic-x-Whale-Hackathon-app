@@ -25,18 +25,18 @@ data class EmergencyColors(
 )
 
 val LightEmergencyColors = EmergencyColors(
-    bg = Color(0xFFFFFFFF),
+    bg = Color(0xFFF9FAFB),
     surface = Color(0xFFFFFFFF),
-    panel = Color(0xFFF7F7F5),
-    panel2 = Color(0xFFEFEEEA),
-    line = Color(0xFFE7E6E1),
-    text = Color(0xFF1A1A1A),
-    textDim = Color(0xFF6B6B66),
-    textFaint = Color(0xFF9A9A93),
-    accent = Color(0xFF1A1A1A),
+    panel = Color(0xFFF1F5F9),
+    panel2 = Color(0xFFE2E8F0),
+    line = Color(0xFFE2E8F0),
+    text = Color(0xFF1E293B),
+    textDim = Color(0xFF64748B),
+    textFaint = Color(0xFF94A3B8),
+    accent = Color(0xFFEF4444),
     accentInk = Color(0xFFFFFFFF),
-    danger = Color(0xFFC0392B),
-    dangerSoft = Color(0xFFFBEDE8),
+    danger = Color(0xFFEF4444),
+    dangerSoft = Color(0xFFFEE2E2),
     safety = Color(0xFFD97706),
     map = Color(0xFFEEF0EC),
     mapPath = Color(0xFFD6DAD1),
@@ -99,10 +99,10 @@ data class ToolPalettes(
 // Tinted bg + saturated fg per design language. Chroma stays ≤ 0.18.
 // Mapped from oklch tokens in DESIGN_LANGUAGE.md / state.jsx.
 val LightToolPalettes = ToolPalettes(
-    firstAid = ToolPalette(bg = Color(0xFFF9DCD3), fg = Color(0xFFC0392B)),
-    abcCheck = ToolPalette(bg = Color(0xFFE0DCEF), fg = Color(0xFF4338CA)),
-    map      = ToolPalette(bg = Color(0xFFD7EBE3), fg = Color(0xFF0F766E)),
-    getOut   = ToolPalette(bg = Color(0xFFF1E5C9), fg = Color(0xFFB45309)),
+    firstAid = ToolPalette(bg = Color(0xFFFEE2E2), fg = Color(0xFFEF4444)),
+    abcCheck = ToolPalette(bg = Color(0xFFEDE9FE), fg = Color(0xFF6D28D9)),
+    map      = ToolPalette(bg = Color(0xFFD1FAE5), fg = Color(0xFF059669)),
+    getOut   = ToolPalette(bg = Color(0xFFFEF3C7), fg = Color(0xFFD97706)),
 )
 
 val LocalToolPalettes = staticCompositionLocalOf { LightToolPalettes }

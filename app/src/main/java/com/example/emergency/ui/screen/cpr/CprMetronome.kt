@@ -1,5 +1,7 @@
 package com.example.emergency.ui.screen.cpr
 
+import android.media.AudioManager
+import android.media.ToneGenerator
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,9 +62,18 @@ fun CprMetronome(modifier: Modifier = Modifier) {
     var compressions by remember { mutableStateOf(0) }
     var cycles by remember { mutableStateOf(0) }
 
+    // Audible click on every beat
+    val toneGenerator = remember {
+        runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 80) }.getOrNull()
+    }
+    DisposableEffect(Unit) {
+        onDispose { toneGenerator?.release() }
+    }
+
     LaunchedEffect(isRunning) {
         if (!isRunning) return@LaunchedEffect
         while (isActive) {
+            toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 60)
             delay(BEAT_MS)
             val next = compressions + 1
             if (next >= 30) {

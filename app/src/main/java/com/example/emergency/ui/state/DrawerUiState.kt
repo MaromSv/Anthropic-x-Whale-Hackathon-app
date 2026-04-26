@@ -29,7 +29,7 @@ data class DrawerUiState(
 )
 
 val SampleDrawerUiState = DrawerUiState(
-    title = "Emergency Assistant",
+    title = "Mark",
     statusLabel = "On-device \u00B7 ready offline",
     statusOk = true,
     entries = listOf(
