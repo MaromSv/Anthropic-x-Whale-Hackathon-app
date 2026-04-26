@@ -209,6 +209,7 @@ fun InteractiveMap(
     var userLocation by remember { mutableStateOf(DAM_SQUARE) }
     var routeSource by remember { mutableStateOf<GeoJsonSource?>(null) }
     var userLocationSource by remember { mutableStateOf<GeoJsonSource?>(null) }
+    var selectedDestSource by remember { mutableStateOf<GeoJsonSource?>(null) }
     // Captured once the underlying MapboxMap is ready so other effects can
     // animate the camera (e.g., to the user's GPS fix) without re-entering
     // getMapAsync.
@@ -269,7 +270,8 @@ fun InteractiveMap(
                     addPoiLayer(context, style)
                     routeSource = addRouteLayer(style)
                     userLocationSource = addUserLocationLayer(style)
-                    Log.d(TAG, "POI + route + user-location layers attached")
+                    selectedDestSource = addSelectedDestinationLayer(style)
+                    Log.d(TAG, "POI + route + user-location + selected-dest layers attached")
                 } catch (e: Exception) {
                     Log.e(TAG, "Layer setup failed", e)
                 }
@@ -316,6 +318,27 @@ fun InteractiveMap(
         val src = userLocationSource ?: return@LaunchedEffect
         val pt = Point.fromLngLat(userLocation.longitude, userLocation.latitude)
         src.setGeoJson(Feature.fromGeometry(pt))
+    }
+
+    // Mirror the selected destination into a dedicated source so the route
+    // endpoint always shows a marker — including LLM-supplied destinations
+    // that aren't part of the bundled POI dataset.
+    LaunchedEffect(selectedDestSource, selectedPoi) {
+        val src = selectedDestSource ?: return@LaunchedEffect
+        val poi = selectedPoi
+        if (poi != null) {
+            val props = com.google.gson.JsonObject().apply {
+                addProperty("category", poi.category)
+                addProperty("name", poi.name)
+            }
+            val feature = Feature.fromGeometry(
+                Point.fromLngLat(poi.lon, poi.lat),
+                props,
+            )
+            src.setGeoJson(feature)
+        } else {
+            src.setGeoJson(FeatureCollection.fromFeatures(emptyArray()))
+        }
     }
 
     // Fetch route whenever (selectedPoi, mode, userLocation) changes.
@@ -673,6 +696,42 @@ private fun addUserLocationLayer(style: Style): GeoJsonSource {
             PropertyFactory.circleRadius(7f),
             PropertyFactory.circleStrokeColor("#FFFFFF"),
             PropertyFactory.circleStrokeWidth(2.5f),
+        ),
+    )
+    return source
+}
+
+// Marker for the currently selected destination. Uses the same `category` icon
+// expression as the POI layer so the visual matches a tapped pin, but renders
+// from its own source — so destinations supplied via `initialDestination`
+// (e.g. from the chat tool) are always visible, even when they aren't part of
+// the bundled POIs.
+private fun addSelectedDestinationLayer(style: Style): GeoJsonSource {
+    val source = GeoJsonSource("selected-dest-source")
+    style.addSource(source)
+    style.addLayer(
+        CircleLayer("selected-dest-halo", "selected-dest-source").withProperties(
+            PropertyFactory.circleColor("#C0392B"),
+            PropertyFactory.circleOpacity(0.22f),
+            PropertyFactory.circleRadius(20f),
+        ),
+    )
+    style.addLayer(
+        CircleLayer("selected-dest-dot", "selected-dest-source").withProperties(
+            PropertyFactory.circleColor("#C0392B"),
+            PropertyFactory.circleRadius(11f),
+            PropertyFactory.circleStrokeColor("#FFFFFF"),
+            PropertyFactory.circleStrokeWidth(2.5f),
+        ),
+    )
+    style.addLayer(
+        SymbolLayer("selected-dest-icon", "selected-dest-source").withProperties(
+            PropertyFactory.iconImage(
+                Expression.concat(Expression.get("category"), Expression.literal("-icon"))
+            ),
+            PropertyFactory.iconSize(0.22f),
+            PropertyFactory.iconAllowOverlap(true),
+            PropertyFactory.iconIgnorePlacement(true),
         ),
     )
     return source
