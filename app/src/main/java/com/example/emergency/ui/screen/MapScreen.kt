@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.example.emergency.ui.screen.common.SubScreenTopBar
 import com.example.emergency.ui.screen.map.InteractiveMap
+import com.example.emergency.ui.screen.map.MapDestination
 import com.example.emergency.ui.state.MapFilter
 import com.example.emergency.ui.state.MapPoi
 import com.example.emergency.ui.state.MapUiState
@@ -28,6 +29,7 @@ import com.example.emergency.ui.theme.EmergencyTheme
 fun MapScreen(
     state: MapUiState,
     onBack: () -> Unit = {},
+    initialDestination: MapDestination? = null,
     @Suppress("UNUSED_PARAMETER") onFilterClick: (MapFilter) -> Unit = {},
     @Suppress("UNUSED_PARAMETER") onPoiClick: (MapPoi) -> Unit = {},
 ) {
@@ -40,6 +42,9 @@ fun MapScreen(
             .statusBarsPadding(),
     ) {
         SubScreenTopBar(title = state.title, onBack = onBack)
-        InteractiveMap(modifier = Modifier.fillMaxSize())
+        InteractiveMap(
+            modifier = Modifier.fillMaxSize(),
+            initialDestination = initialDestination,
+        )
     }
 }

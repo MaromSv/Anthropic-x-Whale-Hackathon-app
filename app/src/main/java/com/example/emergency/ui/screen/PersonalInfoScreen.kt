@@ -17,12 +17,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Phone
+import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -31,17 +31,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.emergency.ui.screen.common.GroupedListContainer
-import com.example.emergency.ui.screen.common.GroupedListDivider
-import com.example.emergency.ui.screen.common.ScreenSectionHeader
 import com.example.emergency.ui.screen.common.SubScreenTopBar
 import com.example.emergency.ui.state.EmergencyContact
 import com.example.emergency.ui.state.MedicalInfo
 import com.example.emergency.ui.state.PersonalInfoUiState
 import com.example.emergency.ui.theme.EmergencyShapes
 import com.example.emergency.ui.theme.EmergencyTheme
+import com.example.emergency.ui.theme.JetBrainsMonoFamily
 
 @Composable
 fun PersonalInfoScreen(
@@ -62,54 +65,102 @@ fun PersonalInfoScreen(
             .background(colors.bg)
             .statusBarsPadding(),
     ) {
-        SubScreenTopBar(title = "Personal info", onBack = onBack)
+        SubScreenTopBar(
+            title = "Personal info",
+            onBack = onBack,
+            trailing = { EditPillButton(onClick = onEditIdentity) },
+        )
 
         Column(
             modifier = Modifier
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
                 .padding(bottom = 24.dp),
         ) {
             Spacer(modifier = Modifier.height(16.dp))
-            IdentityCard(
+            MedicalCardHero(
                 name = state.name,
                 dateOfBirth = state.dateOfBirth,
-                onEdit = onEditIdentity,
+                bloodType = state.medical.bloodType,
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
-            ScreenSectionHeader(text = "MEDICAL")
-            Spacer(modifier = Modifier.height(8.dp))
-            MedicalSection(medical = state.medical, onEdit = onEditMedical)
+            Spacer(modifier = Modifier.height(14.dp))
+            PrivacyStrip()
 
-            Spacer(modifier = Modifier.height(20.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
+            SectionBlock(
+                title = "ALLERGIES",
+                onAdd = onEditMedical,
             ) {
-                ScreenSectionHeader(text = "EMERGENCY CONTACTS", modifier = Modifier.weight(1f))
+                if (state.medical.allergies.isEmpty()) {
+                    EmptyHint(text = "None added")
+                } else {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        state.medical.allergies.forEach { Chip(text = it, variant = ChipVariant.Warn) }
+                    }
+                }
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            ContactsSection(
-                contacts = state.contacts,
-                onContactClick = onContactClick,
-                onContactCall = onContactCall,
-                onAddContact = onAddContact,
-            )
 
-            Spacer(modifier = Modifier.height(20.dp))
-            ScreenSectionHeader(text = "ON-DEVICE")
+            SectionBlock(
+                title = "CONDITIONS",
+                onAdd = onEditMedical,
+            ) {
+                if (state.medical.conditions.isEmpty()) {
+                    EmptyHint(text = "None added")
+                } else {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        state.medical.conditions.forEach { Chip(text = it, variant = ChipVariant.Neutral) }
+                    }
+                }
+            }
+
+            SectionBlock(
+                title = "MEDICATIONS",
+                onAdd = onEditMedical,
+            ) {
+                if (state.medical.medications.isEmpty()) {
+                    EmptyHint(text = "None added")
+                } else {
+                    Column {
+                        state.medical.medications.forEach { med ->
+                            Text(
+                                text = med,
+                                style = EmergencyTheme.typography.body.copy(fontSize = 14.sp),
+                                color = EmergencyTheme.colors.text,
+                                modifier = Modifier.padding(vertical = 4.dp),
+                            )
+                        }
+                    }
+                }
+            }
+
+            SectionBlock(
+                title = "EMERGENCY CONTACTS",
+                onAdd = onAddContact,
+            ) {
+                if (state.contacts.isEmpty()) {
+                    EmptyHint(text = "No contacts yet")
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        state.contacts.forEach { contact ->
+                            ContactCard(
+                                contact = contact,
+                                onClick = { onContactClick(contact) },
+                            )
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
-            LockScreenRow(
+            LockScreenCard(
                 checked = state.showOnLockScreen,
                 onCheckedChange = onLockScreenToggle,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Saved on this device only \u00B7 Never synced.",
-                style = EmergencyTheme.typography.helper.copy(fontSize = 12.sp),
-                color = colors.textFaint,
             )
         }
 
@@ -118,97 +169,205 @@ fun PersonalInfoScreen(
 }
 
 @Composable
-private fun IdentityCard(
-    name: String?,
-    dateOfBirth: String?,
-    onEdit: () -> Unit,
-) {
+private fun EditPillButton(onClick: () -> Unit) {
     val colors = EmergencyTheme.colors
-    val typography = EmergencyTheme.typography
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .clip(EmergencyShapes.card)
-            .background(colors.surface)
-            .border(1.dp, colors.line, EmergencyShapes.card)
-            .clickable(onClick = onEdit)
-            .padding(16.dp),
+            .clip(EmergencyShapes.full)
+            .border(1.dp, colors.line, EmergencyShapes.full)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 6.dp),
     ) {
-        InitialsAvatar(name = name)
-        Spacer(modifier = Modifier.size(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = name ?: "Add your name",
-                style = typography.listItem.copy(fontSize = 16.sp),
-                color = if (name != null) colors.text else colors.textFaint,
-            )
-            dateOfBirth?.let { dob ->
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = dob,
-                    style = typography.helper.copy(fontSize = 12.sp),
-                    color = colors.textDim,
-                )
-            }
-        }
-        Icon(
-            imageVector = Icons.Outlined.Edit,
-            contentDescription = "Edit identity",
-            tint = colors.textFaint,
-            modifier = Modifier.size(18.dp),
+        Text(
+            text = "Edit",
+            style = EmergencyTheme.typography.listItem.copy(fontSize = 13.sp),
+            color = colors.text,
         )
     }
 }
 
 @Composable
-private fun InitialsAvatar(name: String?) {
+private fun MedicalCardHero(
+    name: String?,
+    dateOfBirth: String?,
+    bloodType: String?,
+) {
     val colors = EmergencyTheme.colors
     val typography = EmergencyTheme.typography
-    val initials = name
-        ?.split(" ")
-        ?.mapNotNull { it.firstOrNull()?.uppercase() }
-        ?.take(2)
-        ?.joinToString("")
-        ?: "?"
+    val ink = colors.bg
+    val inkDim = colors.bg.copy(alpha = 0.65f)
+    val inkFaint = colors.bg.copy(alpha = 0.55f)
 
-    Box(
+    Column(
         modifier = Modifier
-            .size(44.dp)
-            .clip(EmergencyShapes.full)
-            .background(colors.panel)
-            .border(1.dp, colors.line, EmergencyShapes.full),
-        contentAlignment = Alignment.Center,
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(colors.text)
+            .padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 16.dp),
     ) {
+        Row(
+            verticalAlignment = Alignment.Top,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "MEDICAL CARD",
+                    style = typography.monoMicro.copy(fontSize = 10.sp, letterSpacing = 0.8.sp),
+                    color = inkFaint,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = name ?: "Add your name",
+                    style = typography.listItem.copy(fontSize = 20.sp, fontWeight = FontWeight.Medium),
+                    color = ink,
+                )
+                val sub = buildSubLine(dateOfBirth)
+                if (sub != null) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = sub,
+                        style = typography.helper.copy(fontSize = 12.sp),
+                        color = inkDim,
+                    )
+                }
+            }
+            if (!bloodType.isNullOrBlank()) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.White.copy(alpha = 0.12f))
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        text = bloodType,
+                        color = ink,
+                        style = typography.listItem.copy(
+                            fontFamily = JetBrainsMonoFamily,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Medium,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun buildSubLine(dateOfBirth: String?): String? {
+    if (dateOfBirth.isNullOrBlank()) return null
+    val year = Regex("\\d{4}").find(dateOfBirth)?.value
+    return if (year != null) "b. $year" else dateOfBirth
+}
+
+@Composable
+private fun PrivacyStrip() {
+    val colors = EmergencyTheme.colors
+    val typography = EmergencyTheme.typography
+
+    Row(
+        verticalAlignment = Alignment.Top,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(colors.panel)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Shield,
+            contentDescription = null,
+            tint = colors.textDim,
+            modifier = Modifier.size(16.dp).padding(top = 2.dp),
+        )
+        Spacer(modifier = Modifier.size(10.dp))
         Text(
-            text = initials,
-            style = typography.listItem.copy(fontSize = 14.sp),
+            text = buildAnnotatedString {
+                withStyle(SpanStyle(color = colors.text, fontWeight = FontWeight.Medium)) {
+                    append("Stays on your device. ")
+                }
+                append("Mark uses these fields silently to give you better advice — they're never sent anywhere.")
+            },
+            style = typography.helper.copy(fontSize = 12.sp, lineHeight = 18.sp),
             color = colors.textDim,
         )
     }
 }
 
 @Composable
-private fun MedicalSection(
-    medical: MedicalInfo,
-    onEdit: () -> Unit,
+private fun SectionBlock(
+    title: String,
+    onAdd: () -> Unit,
+    content: @Composable () -> Unit,
 ) {
-    GroupedListContainer {
-        MedicalRow(label = "Blood type", value = medical.bloodType ?: "Not set", onClick = onEdit)
-        GroupedListDivider()
-        ChipMedicalRow(label = "Allergies", chips = medical.allergies, onClick = onEdit)
-        GroupedListDivider()
-        ChipMedicalRow(label = "Conditions", chips = medical.conditions, onClick = onEdit)
-        GroupedListDivider()
-        ChipMedicalRow(label = "Medications", chips = medical.medications, onClick = onEdit)
+    val colors = EmergencyTheme.colors
+    val typography = EmergencyTheme.typography
+
+    Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 4.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                text = title,
+                style = typography.eyebrow,
+                color = colors.textDim,
+                modifier = Modifier.weight(1f),
+            )
+            Box(
+                modifier = Modifier
+                    .clip(EmergencyShapes.full)
+                    .clickable(onClick = onAdd)
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    text = "+ Add",
+                    style = typography.helper.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium),
+                    color = colors.textDim,
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        content()
     }
 }
 
 @Composable
-private fun MedicalRow(
-    label: String,
-    value: String,
+private fun EmptyHint(text: String) {
+    Text(
+        text = text,
+        style = EmergencyTheme.typography.helper.copy(fontSize = 13.sp),
+        color = EmergencyTheme.colors.textFaint,
+        modifier = Modifier.padding(vertical = 4.dp),
+    )
+}
+
+private enum class ChipVariant { Warn, Neutral }
+
+@Composable
+private fun Chip(text: String, variant: ChipVariant) {
+    val colors = EmergencyTheme.colors
+    val (bg, fg) = when (variant) {
+        ChipVariant.Warn -> Color(0xFFF6DCC9) to Color(0xFF7C2D12)
+        ChipVariant.Neutral -> colors.panel to colors.text
+    }
+    Box(
+        modifier = Modifier
+            .clip(EmergencyShapes.full)
+            .background(bg)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        Text(
+            text = text,
+            style = EmergencyTheme.typography.listItem.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium),
+            color = fg,
+        )
+    }
+}
+
+@Composable
+private fun ContactCard(
+    contact: EmergencyContact,
     onClick: () -> Unit,
 ) {
     val colors = EmergencyTheme.colors
@@ -218,21 +377,26 @@ private fun MedicalRow(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(colors.panel)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
-        Text(
-            text = label,
-            style = typography.listItem.copy(fontSize = 14.sp),
-            color = colors.text,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = value,
-            style = typography.body.copy(fontSize = 14.sp),
-            color = colors.textDim,
-        )
-        Spacer(modifier = Modifier.size(8.dp))
+        ContactMonogram(name = contact.name)
+        Spacer(modifier = Modifier.size(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = contact.name,
+                style = typography.listItem.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium),
+                color = colors.text,
+            )
+            Spacer(modifier = Modifier.height(1.dp))
+            Text(
+                text = "${contact.relation} \u00B7 ${contact.phone}",
+                style = typography.helper.copy(fontSize = 12.sp),
+                color = colors.textDim,
+            )
+        }
         Icon(
             imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
             contentDescription = null,
@@ -243,209 +407,81 @@ private fun MedicalRow(
 }
 
 @Composable
-private fun ChipMedicalRow(
-    label: String,
-    chips: List<String>,
-    onClick: () -> Unit,
-) {
+private fun ContactMonogram(name: String) {
     val colors = EmergencyTheme.colors
-    val typography = EmergencyTheme.typography
+    val initials = name
+        .split(" ")
+        .mapNotNull { it.firstOrNull()?.uppercase() }
+        .take(2)
+        .joinToString("")
+        .ifEmpty { "?" }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = label,
-                style = typography.listItem.copy(fontSize = 14.sp),
-                color = colors.text,
-                modifier = Modifier.weight(1f),
-            )
-            if (chips.isEmpty()) {
-                Text(
-                    text = "Add",
-                    style = typography.helper.copy(fontSize = 12.sp),
-                    color = colors.textFaint,
-                )
-                Spacer(modifier = Modifier.size(8.dp))
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = colors.textFaint,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-        }
-        if (chips.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                chips.forEach { chip -> InfoChip(text = chip) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun InfoChip(text: String) {
-    val colors = EmergencyTheme.colors
-    val typography = EmergencyTheme.typography
     Box(
         modifier = Modifier
+            .size(36.dp)
             .clip(EmergencyShapes.full)
-            .background(colors.panel)
-            .border(1.dp, colors.line, EmergencyShapes.full)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
+            .background(colors.surface),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = text,
-            style = typography.helper.copy(fontSize = 12.sp),
-            color = colors.textDim,
-        )
-    }
-}
-
-@Composable
-private fun ContactsSection(
-    contacts: List<EmergencyContact>,
-    onContactClick: (EmergencyContact) -> Unit,
-    onContactCall: (EmergencyContact) -> Unit,
-    onAddContact: () -> Unit,
-) {
-    GroupedListContainer {
-        contacts.forEach { contact ->
-            ContactRow(
-                contact = contact,
-                onClick = { onContactClick(contact) },
-                onCall = { onContactCall(contact) },
-            )
-            GroupedListDivider()
-        }
-        AddContactRow(onClick = onAddContact)
-    }
-}
-
-@Composable
-private fun ContactRow(
-    contact: EmergencyContact,
-    onClick: () -> Unit,
-    onCall: () -> Unit,
-) {
-    val colors = EmergencyTheme.colors
-    val typography = EmergencyTheme.typography
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = contact.name,
-                style = typography.listItem.copy(fontSize = 14.sp),
-                color = colors.text,
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = "${contact.relation} \u00B7 ${contact.phone}",
-                style = typography.helper.copy(fontSize = 12.sp),
-                color = colors.textDim,
-            )
-        }
-        Spacer(modifier = Modifier.size(12.dp))
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(EmergencyShapes.full)
-                .background(colors.panel)
-                .border(1.dp, colors.line, EmergencyShapes.full)
-                .clickable(onClick = onCall),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Phone,
-                contentDescription = "Call ${contact.name}",
-                tint = colors.text,
-                modifier = Modifier.size(16.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun AddContactRow(onClick: () -> Unit) {
-    val colors = EmergencyTheme.colors
-    val typography = EmergencyTheme.typography
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.Add,
-            contentDescription = null,
-            tint = colors.textDim,
-            modifier = Modifier.size(18.dp),
-        )
-        Spacer(modifier = Modifier.size(10.dp))
-        Text(
-            text = "Add contact",
-            style = typography.listItem.copy(fontSize = 14.sp),
+            text = initials,
+            style = EmergencyTheme.typography.listItem.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium),
             color = colors.text,
         )
     }
 }
 
 @Composable
-private fun LockScreenRow(
+private fun LockScreenCard(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     val colors = EmergencyTheme.colors
     val typography = EmergencyTheme.typography
 
-    GroupedListContainer {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Show on lock screen",
-                    style = typography.listItem.copy(fontSize = 14.sp),
-                    color = colors.text,
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "Responders can see allergies, blood type, and contacts.",
-                    style = typography.helper.copy(fontSize = 12.sp),
-                    color = colors.textDim,
-                )
-            }
-            Spacer(modifier = Modifier.size(12.dp))
-            Switch(
-                checked = checked,
-                onCheckedChange = onCheckedChange,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = colors.accentInk,
-                    checkedTrackColor = colors.accent,
-                    uncheckedThumbColor = colors.surface,
-                    uncheckedTrackColor = colors.panel,
-                    uncheckedBorderColor = colors.line,
-                ),
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(colors.panel)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.NotificationsActive,
+            contentDescription = null,
+            tint = colors.text,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.size(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Show on lock screen",
+                style = typography.listItem.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium),
+                color = colors.text,
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "Responders can see your blood type and allergies without unlocking.",
+                style = typography.helper.copy(fontSize = 12.sp, lineHeight = 17.sp),
+                color = colors.textDim,
             )
         }
+        Spacer(modifier = Modifier.size(12.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = colors.bg,
+                checkedTrackColor = colors.text,
+                uncheckedThumbColor = colors.surface,
+                uncheckedTrackColor = colors.panel2,
+                uncheckedBorderColor = colors.line,
+            ),
+        )
     }
 }
+
+@Suppress("unused")
+private val MedicalInfoSentinel: MedicalInfo? = null

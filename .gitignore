@@ -11,6 +11,12 @@ android/app/release/
 *.task
 *.bin
 
+# Offline map bundle — fetched/built by scripts/setup_offline_data.sh.
+# These blobs total ~470 MB and live in git via build-time download instead.
+app/libs/brouter.jar
+app/src/main/assets/brouter/segments/*.rd5
+app/src/main/assets/tiles/*.mbtiles
+
 # IDE
 .idea/
 *.iml

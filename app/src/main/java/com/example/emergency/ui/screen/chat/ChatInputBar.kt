@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.Photo
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,6 +50,7 @@ fun ChatInputBar(
     onSend: () -> Unit,
     onMic: () -> Unit = {},
     onCamera: () -> Unit = {},
+    onGallery: () -> Unit = {},
     pendingImages: List<String> = emptyList(),
     onRemoveImage: (String) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -111,9 +113,16 @@ fun ChatInputBar(
         ) {
         ComposerIconButton(
             icon = Icons.Outlined.PhotoCamera,
-            contentDescription = "Add photo",
+            contentDescription = "Take photo",
             tint = colors.textDim,
             onClick = onCamera,
+        )
+        
+        ComposerIconButton(
+            icon = Icons.Outlined.Photo,
+            contentDescription = "Choose from gallery",
+            tint = colors.textDim,
+            onClick = onGallery,
         )
 
         Spacer(modifier = Modifier.width(4.dp))

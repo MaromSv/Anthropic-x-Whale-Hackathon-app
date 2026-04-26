@@ -1,7 +1,9 @@
 package com.example.emergency.agent
 
 import android.content.Context
+import com.example.emergency.agent.tools.AbcCheckTool
 import com.example.emergency.agent.tools.CprTool
+import com.example.emergency.agent.tools.FindNearestTool
 import com.example.emergency.agent.tools.GpsLocationTool
 import com.example.emergency.agent.tools.MedicalRagTool
 
@@ -17,79 +19,86 @@ class ToolManager(context: Context) {
             GpsLocationTool(context).getTool(),
             MedicalRagTool(context).getTool(),
             CprTool().getTool(),
+            AbcCheckTool().getTool(),
+            FindNearestTool(context).getTool(),
         )
         
         tools = toolList.associateBy { it.name }
     }
     
     /**
-     * Returns the list of available tools for the system prompt.
+     * Returns the list of available tools and the tool-call format for the system prompt.
      */
     fun getToolDescriptions(): String {
         return buildString {
-            appendLine("Act as a medical emergency assistant by providing concise, step-by-step advice in urgent medical situations. Your responses must be extremely brief, focused only on essential actions, and suitable for laypeople.\n")
-            appendLine("**ALWAYS start your response with: 'Call 112 immediately if this is life-threatening.'**\n")
-            
-            appendLine("**MANDATORY TOOL CALLING RULES - FOLLOW THESE FIRST:**")
-            appendLine("You MUST call the appropriate tool BEFORE giving any advice:\n")
-            appendLine("1. **search_medical_database** - Call for ANY medical question (cuts, burns, injuries, symptoms, conditions, treatments, bleeding, wounds, pain, illness, poisoning, etc.)")
-            appendLine("   Query with the symptom/condition name (e.g., 'cut', 'burn', 'chest pain', 'bleeding')")
-            appendLine("   Example: User says 'I have a cut' → IMMEDIATELY call search_medical_database with query=cut\n")
-            appendLine("2. **cpr_instructions** - Call IMMEDIATELY when user mentions:")
-            appendLine("   - Unresponsive, unconscious, not responding, passed out, collapsed")
-            appendLine("   - Not breathing, no pulse, cardiac arrest, heart stopped")
-            appendLine("   - User says to start CPR or asking about CPR")
-            appendLine("   Example: User says 'she is unresponsive' → IMMEDIATELY call cpr_instructions\n")
-            appendLine("3. **get_location** - ONLY call if user explicitly asks for GPS coordinates or location")
-            appendLine("   Do NOT use for medical questions\n")
-            
-            appendLine("**CRITICAL: Always call tools FIRST, then use the tool output to give your advice. Never give medical advice without calling the appropriate tool.**\n")
-            
-            appendLine("After using a tool, provide concise guidance based on the tool output:\n")
-            appendLine("**Output format:**  ")
-            appendLine("- Maximum 2-6 concise steps, each ≤20 words.")
-            appendLine("- Use numbered bullets.\n")
-            appendLine("You have access to the following tools:\n")
+            appendLine("Available tools:")
             tools.values.forEach { tool ->
-                appendLine("**${tool.name}**: ${tool.description}")
+                appendLine("- **${tool.name}**: ${tool.description}")
             }
             appendLine()
-            appendLine("To use a tool, respond with the exact format:")
+            appendLine("Tool call format (must match exactly):")
             appendLine("<tool_call>")
             appendLine("tool_name")
-            appendLine("param1=value1")
-            appendLine("param2=value2")
+            appendLine("param=value")
             appendLine("</tool_call>")
-            appendLine()
-            appendLine("After using a tool, you will receive the tool's output, then provide your response to the user based on that data.")
         }
     }
     
     /**
      * Parses tool calls from the assistant's response.
-     * Looks for <tool_call>...</tool_call> blocks.
+     * Handles malformed tags the LLM sometimes produces such as:
+     *   <tool_call>...</ tool_call>
+     *   <tool_call>...</call>
+     *   <tool_tool_call>...</tool_call>
+     *   <tool_call>...</tool_ call>
+     * We use a generous regex that captures the body between any
+     * "tool" opening tag and any closing tag that starts with "</".
      */
     fun parseToolCalls(response: String): List<ToolCall> {
         val toolCalls = mutableListOf<ToolCall>()
-        val regex = """<tool_call>(.*?)</tool_call>""".toRegex(RegexOption.DOT_MATCHES_ALL)
-        
+
+        // Generous open tag: <tool_call>, <tool_tool_call>, < tool_call >, etc.
+        // Generous close tag: </tool_call>, </call>, </tool_tool_call>, etc.
+        val regex = """<\s*(?:tool_)*tool_call\s*>(.*?)<\s*/\s*(?:tool_)*(?:tool_)?call\s*>"""
+            .toRegex(setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+
         regex.findAll(response).forEach { match ->
             val content = match.groupValues[1].trim()
             val lines = content.lines().map { it.trim() }.filter { it.isNotEmpty() }
-            
+
             if (lines.isNotEmpty()) {
-                val toolName = lines[0]
-                val params = lines.drop(1)
-                    .mapNotNull { line ->
+                // The first line is the tool name — strip any leftover XML-like chars
+                val toolName = lines[0].replace(Regex("[<>]"), "").trim()
+                if (toolName.isNotEmpty() && toolName in tools) {
+                    val paramLines = lines.drop(1)
+                    val params = mutableMapOf<String, String>()
+                    val orphans = mutableListOf<String>()
+
+                    for (line in paramLines) {
                         val parts = line.split("=", limit = 2)
-                        if (parts.size == 2) parts[0].trim() to parts[1].trim() else null
+                        if (parts.size == 2) {
+                            params[parts[0].trim()] = parts[1].trim()
+                        } else {
+                            // Orphan value (no key=value format)
+                            orphans.add(line)
+                        }
                     }
-                    .toMap()
-                
-                toolCalls.add(ToolCall(toolName, params))
+
+                    // If no "query" param but there are orphan lines, treat
+                    // the first one as the query (common model mistake).
+                    if ("query" !in params && orphans.isNotEmpty()) {
+                        params["query"] = orphans.joinToString(" ")
+                    }
+                    // If "category" is missing for find_nearest, same logic
+                    if (toolName == "find_nearest" && "category" !in params && orphans.isNotEmpty()) {
+                        params["category"] = orphans.first().lowercase()
+                    }
+
+                    toolCalls.add(ToolCall(toolName, params))
+                }
             }
         }
-        
+
         return toolCalls
     }
     
@@ -116,9 +125,16 @@ class ToolManager(context: Context) {
     }
     
     /**
-     * Removes tool call blocks from the response text.
+     * Removes tool call blocks from the response text (matches the same
+     * generous pattern as [parseToolCalls]).
      */
     fun removeToolCallBlocks(response: String): String {
-        return response.replace("""<tool_call>.*?</tool_call>""".toRegex(RegexOption.DOT_MATCHES_ALL), "").trim()
+        return response
+            .replace(
+                """<\s*(?:tool_)*tool_call\s*>.*?<\s*/\s*(?:tool_)*(?:tool_)?call\s*>"""
+                    .toRegex(setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)),
+                ""
+            )
+            .trim()
     }
 }

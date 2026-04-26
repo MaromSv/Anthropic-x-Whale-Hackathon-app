@@ -1,13 +1,17 @@
 package com.example.emergency.ui.screen.chat
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Menu
+import androidx.compose.material.icons.rounded.Add as AddRounded
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -16,7 +20,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.emergency.ui.theme.EmergencyTheme
 
 @Composable
@@ -26,6 +36,8 @@ fun ChatTopBar(
 ) {
     val colors = EmergencyTheme.colors
     val typography = EmergencyTheme.typography
+    val markRed = Color(0xFFEF4444)
+    val markNavy = Color(0xFF1E293B)
 
     Box(
         modifier = Modifier
@@ -53,12 +65,21 @@ fun ChatTopBar(
             )
         }
 
-        Text(
-            text = "Emergency Assistant",
-            style = typography.appBarTitle,
-            color = colors.text,
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.align(Alignment.Center),
-        )
+        ) {
+            Text(
+                text = buildAnnotatedString {
+                    withStyle(SpanStyle(color = markNavy, fontWeight = FontWeight.Bold, fontSize = 20.sp)) {
+                        append("mar")
+                    }
+                    withStyle(SpanStyle(color = markRed, fontWeight = FontWeight.Bold, fontSize = 20.sp)) {
+                        append("k")
+                    }
+                },
+            )
+        }
 
         IconButton(
             onClick = onNewChatClick,

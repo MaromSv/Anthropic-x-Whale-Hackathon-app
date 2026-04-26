@@ -4,8 +4,10 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.RectF
+import android.graphics.drawable.BitmapDrawable
 import android.util.Log
 import android.view.View
 import androidx.compose.animation.AnimatedVisibility
@@ -14,6 +16,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,31 +33,29 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsBike
 import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.DirectionsSubway
 import androidx.compose.material.icons.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocalAtm
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.LocalGasStation
 import androidx.compose.material.icons.filled.LocalGroceryStore
 import androidx.compose.material.icons.filled.LocalHospital
-import androidx.compose.material.icons.filled.LocalParking
 import androidx.compose.material.icons.filled.LocalPharmacy
 import androidx.compose.material.icons.filled.LocalPolice
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,10 +71,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.example.emergency.ui.theme.EmergencyShapes
+import com.example.emergency.ui.theme.EmergencyTheme
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.example.emergency.offline.MbtilesServer
+import com.example.emergency.offline.OfflineAssets
+import com.example.emergency.offline.OfflineBootstrap
+import com.example.emergency.offline.OfflineRouter
 import com.google.android.gms.location.LocationServices
+import com.mapbox.geojson.Feature
 import com.mapbox.geojson.FeatureCollection
 import com.mapbox.geojson.LineString
 import com.mapbox.geojson.Point
@@ -82,6 +91,7 @@ import com.mapbox.mapboxsdk.WellKnownTileServer
 import com.mapbox.mapboxsdk.camera.CameraPosition
 import com.mapbox.mapboxsdk.camera.CameraUpdateFactory
 import com.mapbox.mapboxsdk.geometry.LatLng
+import com.mapbox.mapboxsdk.geometry.LatLngBounds
 import com.mapbox.mapboxsdk.maps.MapView
 import com.mapbox.mapboxsdk.maps.MapboxMap
 import com.mapbox.mapboxsdk.maps.MapboxMapOptions
@@ -93,38 +103,38 @@ import com.mapbox.mapboxsdk.style.layers.PropertyFactory
 import com.mapbox.mapboxsdk.style.layers.SymbolLayer
 import com.mapbox.mapboxsdk.style.sources.GeoJsonOptions
 import com.mapbox.mapboxsdk.style.sources.GeoJsonSource
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 import kotlin.coroutines.resume
 
 private const val TAG = "InteractiveMap"
-private val DAM_SQUARE = LatLng(52.3731, 4.8926)
+// Bump whenever app/src/main/assets/pois-nl.geojson changes. The first launch
+// after an upgrade will overwrite the cached copy in filesDir; otherwise the
+// device keeps showing whatever was bundled at install time.
+private const val POI_BUNDLE_VERSION = 2
+
+internal val DAM_SQUARE = LatLng(52.3731, 4.8926)
 
 // PDOK basemap only covers the Netherlands; outside this bbox we keep the
 // camera anchored to Dam Square instead of flying into a tile-less void
 // (most commonly the emulator's default Mountain View location).
-private val NL_BBOX_SW = LatLng(50.7, 3.3)
-private val NL_BBOX_NE = LatLng(53.6, 7.3)
+internal val NL_BBOX_SW = LatLng(50.7, 3.3)
+internal val NL_BBOX_NE = LatLng(53.6, 7.3)
 
-private fun LatLng.isInNL(): Boolean =
+internal fun LatLng.isInNL(): Boolean =
     latitude in NL_BBOX_SW.latitude..NL_BBOX_NE.latitude &&
         longitude in NL_BBOX_SW.longitude..NL_BBOX_NE.longitude
 
-// All POI categories produced by data-pipeline/extract_pois.py. Listed once so
-// icon registration, color stops and bottom-card mappings stay in sync.
+// POI categories present in assets/pois-nl.geojson. Listed once so icon
+// registration, color stops and bottom-card mappings stay in sync.
 private val POI_CATEGORIES = listOf(
     "hospital", "doctor", "first_aid", "aed", "pharmacy", "police", "fire",
-    "shelter", "water", "toilet", "metro", "parking_underground", "bunker",
-    "fuel", "supermarket", "atm", "phone", "school", "community", "worship",
+    "water", "toilet", "bunker",
+    "fuel", "supermarket", "atm", "phone",
 )
 
 private data class Poi(val name: String, val category: String, val lat: Double, val lon: Double)
 
-private data class RouteResult(
+internal data class RouteResult(
     val polyline: List<LatLng>,
     val distanceM: Double,
     val durationS: Double,
@@ -142,14 +152,11 @@ private fun categoryIcon(category: String): ImageVector = when (category) {
     "pharmacy"            -> Icons.Default.LocalPharmacy
     "police"              -> Icons.Default.LocalPolice
     "fire"                -> Icons.Default.LocalFireDepartment
-    "shelter"             -> Icons.Default.Home
-    "metro"               -> Icons.Default.DirectionsSubway
+    "bunker"              -> Icons.Default.Shield
     "fuel"                -> Icons.Default.LocalGasStation
     "supermarket"         -> Icons.Default.LocalGroceryStore
     "atm"                 -> Icons.Default.LocalAtm
     "phone"               -> Icons.Default.Phone
-    "school"              -> Icons.Default.School
-    "parking_underground" -> Icons.Default.LocalParking
     else                  -> Icons.Default.Place
 }
 
@@ -161,19 +168,13 @@ private fun categoryColor(category: String): Color = when (category) {
     "pharmacy"            -> Color(0xFF43A047)
     "police"              -> Color(0xFF1E40AF)
     "fire"                -> Color(0xFFB71C1C)
-    "shelter"             -> Color(0xFF00897B)
     "water"               -> Color(0xFF29B6F6)
     "toilet"              -> Color(0xFF6D4C41)
-    "metro"               -> Color(0xFF5E35B1)
-    "parking_underground" -> Color(0xFF455A64)
     "bunker"              -> Color(0xFF424242)
     "fuel"                -> Color(0xFFF9A825)
     "supermarket"         -> Color(0xFF7CB342)
     "atm"                 -> Color(0xFF00ACC1)
     "phone"               -> Color(0xFF8E24AA)
-    "school"              -> Color(0xFFFFB300)
-    "community"           -> Color(0xFF3949AB)
-    "worship"             -> Color(0xFF6A1B9A)
     else                  -> Color(0xFF757575)
 }
 
@@ -188,24 +189,67 @@ private fun categoryColor(category: String): Color = when (category) {
  * Activity.
  */
 @Composable
-fun InteractiveMap(modifier: Modifier = Modifier) {
+fun InteractiveMap(
+    modifier: Modifier = Modifier,
+    initialDestination: MapDestination? = null,
+) {
     val context = LocalContext.current
 
     // Idempotent — MapLibre guards internally against re-entry. Keeping it
     // here means callers don't need to remember to bootstrap from Application
     // or MainActivity.
-    remember { Mapbox.getInstance(context, null, WellKnownTileServer.MapLibre) }
+    remember {
+        Mapbox.getInstance(context, null, WellKnownTileServer.MapLibre)
+        Mapbox.setConnected(true)
+    }
 
     var mode by remember { mutableStateOf(Mode.Walk) }
-    var selectedPoi by remember { mutableStateOf<Poi?>(null) }
+    var selectedPoi by remember {
+        mutableStateOf<Poi?>(
+            initialDestination?.let { Poi(it.name, it.category, it.lat, it.lon) }
+        )
+    }
     var routeResult by remember { mutableStateOf<RouteResult?>(null) }
     var routeLoading by remember { mutableStateOf(false) }
     var userLocation by remember { mutableStateOf(DAM_SQUARE) }
     var routeSource by remember { mutableStateOf<GeoJsonSource?>(null) }
+    var userLocationSource by remember { mutableStateOf<GeoJsonSource?>(null) }
+    var selectedDestSource by remember { mutableStateOf<GeoJsonSource?>(null) }
     // Captured once the underlying MapboxMap is ready so other effects can
     // animate the camera (e.g., to the user's GPS fix) without re-entering
     // getMapAsync.
     var mapboxMap by remember { mutableStateOf<MapboxMap?>(null) }
+
+    // Offline data plane: staging is kicked off at process start by
+    // [com.example.emergency.EmergencyApp], so by the time the map screen
+    // mounts the copy is usually already done. We observe the shared state
+    // here instead of starting the work ourselves. While staging is still
+    // running, the map UI stays interactive — only the tile server / route
+    // engine wait for paths to become available.
+    val bootstrapStatus by OfflineBootstrap.state.collectAsState()
+    val offlinePaths: OfflineAssets.Paths? =
+        (bootstrapStatus as? OfflineBootstrap.Status.Ready)?.paths
+    var tileServerStartError by remember { mutableStateOf<String?>(null) }
+
+    // Tile server lives only while the composable is on screen. Re-keying on
+    // [offlinePaths] means it spins up the moment staging completes, even if
+    // the user was already on the map screen.
+    val tileServer = remember(offlinePaths) {
+        offlinePaths?.let { MbtilesServer(it.mbtilesFile) }
+    }
+    DisposableEffect(tileServer) {
+        val server = tileServer
+        if (server != null) {
+            try {
+                server.start()
+                tileServerStartError = null
+            } catch (e: Exception) {
+                Log.e(TAG, "MBTiles server failed to start", e)
+                tileServerStartError = "Tile server start failed: ${e.message}"
+            }
+        }
+        onDispose { server?.runCatching { stop() } }
+    }
 
     LaunchedEffect(Unit) {
         getUserLocation(context)?.let {
@@ -244,8 +288,12 @@ fun InteractiveMap(modifier: Modifier = Modifier) {
         }
     }
 
-    LaunchedEffect(mapView) {
-        Log.d(TAG, "getMapAsync requested")
+    LaunchedEffect(mapView, tileServer) {
+        // Wait for the local tile server before loading the style — otherwise
+        // MapLibre would synthesize tile URLs against a port that doesn't
+        // exist yet and cache the failure.
+        val server = tileServer ?: return@LaunchedEffect
+        Log.d(TAG, "getMapAsync requested (tile server=${server.tileUrlTemplate})")
         mapView.getMapAsync { map ->
             Log.d(TAG, "MapboxMap ready; setting style")
             mapboxMap = map
@@ -256,12 +304,14 @@ fun InteractiveMap(modifier: Modifier = Modifier) {
                 .target(userLocation)
                 .zoom(14.0)
                 .build()
-            map.setStyle(Style.Builder().fromJson(PDOK_BRT_STYLE)) { style ->
+            map.setStyle(Style.Builder().fromJson(buildOfflineStyle(server.tileUrlTemplate))) { style ->
                 Log.d(TAG, "Style loaded; layers=${style.layers.size}, sources=${style.sources.size}")
                 try {
                     addPoiLayer(context, style)
                     routeSource = addRouteLayer(style)
-                    Log.d(TAG, "POI + route layers attached")
+                    userLocationSource = addUserLocationLayer(style)
+                    selectedDestSource = addSelectedDestinationLayer(style)
+                    Log.d(TAG, "POI + route + user-location + selected-dest layers attached")
                 } catch (e: Exception) {
                     Log.e(TAG, "Layer setup failed", e)
                 }
@@ -286,30 +336,81 @@ fun InteractiveMap(modifier: Modifier = Modifier) {
     // a user location has resolved. The PDOK basemap only covers NL, so if
     // the GPS reports somewhere else we stay on Dam Square — otherwise the
     // user sees a black void of un-tiled ocean.
-    LaunchedEffect(mapboxMap, userLocation) {
+    LaunchedEffect(mapboxMap, userLocation, initialDestination) {
         val map = mapboxMap ?: return@LaunchedEffect
         val target = if (userLocation.isInNL()) userLocation else DAM_SQUARE
         if (target !== userLocation) {
             Log.d(TAG, "GPS ${userLocation.latitude},${userLocation.longitude} outside NL — using Dam Square")
         }
-        map.animateCamera(
-            CameraUpdateFactory.newLatLngZoom(target, 15.0),
-            800,
-        )
+        val update = if (initialDestination != null) {
+            val dest = LatLng(initialDestination.lat, initialDestination.lon)
+            val bounds = LatLngBounds.Builder().include(target).include(dest).build()
+            // 180px padding leaves room for the top mode selector and the
+            // bottom route info card without cropping either endpoint.
+            CameraUpdateFactory.newLatLngBounds(bounds, 180)
+        } else {
+            CameraUpdateFactory.newLatLngZoom(target, 15.0)
+        }
+        map.animateCamera(update, 800)
     }
 
-    // Fetch route whenever (selectedPoi, mode, userLocation) changes.
-    LaunchedEffect(selectedPoi, mode, userLocation) {
+    LaunchedEffect(userLocationSource, userLocation) {
+        val src = userLocationSource ?: return@LaunchedEffect
+        val pt = Point.fromLngLat(userLocation.longitude, userLocation.latitude)
+        src.setGeoJson(Feature.fromGeometry(pt))
+    }
+
+    // Mirror the selected destination into a dedicated source so the route
+    // endpoint always shows a marker — including LLM-supplied destinations
+    // that aren't part of the bundled POI dataset.
+    LaunchedEffect(selectedDestSource, selectedPoi) {
+        val src = selectedDestSource ?: return@LaunchedEffect
+        val poi = selectedPoi
+        if (poi != null) {
+            val props = com.google.gson.JsonObject().apply {
+                addProperty("category", poi.category)
+                addProperty("name", poi.name)
+            }
+            val feature = Feature.fromGeometry(
+                Point.fromLngLat(poi.lon, poi.lat),
+                props,
+            )
+            src.setGeoJson(feature)
+        } else {
+            src.setGeoJson(FeatureCollection.fromFeatures(emptyArray()))
+        }
+    }
+
+    // Fetch route whenever (selectedPoi, mode, userLocation, offlinePaths)
+    // changes. Re-keying on offlinePaths means the first route after staging
+    // completes runs immediately, instead of stalling on stale null paths.
+    LaunchedEffect(selectedPoi, mode, userLocation, offlinePaths) {
         val poi = selectedPoi ?: run {
             routeResult = null
             routeSource?.setGeoJson(FeatureCollection.fromFeatures(emptyArray()))
             return@LaunchedEffect
         }
+        val paths = offlinePaths ?: run {
+            // Staging not done yet — UI shows "Calculating route…" via
+            // [routeLoading] so the user knows we'll route once data lands.
+            routeLoading = true
+            return@LaunchedEffect
+        }
         routeLoading = true
-        val result = brouterRoute(userLocation, LatLng(poi.lat, poi.lon), mode.brouterProfile)
+        val result = OfflineRouter.route(
+            from = userLocation,
+            to = LatLng(poi.lat, poi.lon),
+            profileName = mode.brouterProfile,
+            segmentsDir = paths.segmentsDir,
+            profilesDir = paths.profilesDir,
+        )
         routeLoading = false
         if (result != null && result.polyline.size > 1) {
-            routeResult = result
+            routeResult = RouteResult(
+                polyline = result.polyline,
+                distanceM = result.distanceM,
+                durationS = result.durationS,
+            )
             val pts = result.polyline.map { Point.fromLngLat(it.longitude, it.latitude) }
             routeSource?.setGeoJson(LineString.fromLngLats(pts))
         } else {
@@ -346,6 +447,79 @@ fun InteractiveMap(modifier: Modifier = Modifier) {
                     .padding(bottom = 24.dp),
             )
         }
+
+        // Small non-blocking progress pill, only visible while the bootstrap
+        // is mid-copy (or has errored out). The map stays fully interactive —
+        // mode selector, GPS dot, POI taps all work; tiles just render once
+        // the local server comes up.
+        StagingPill(
+            status = bootstrapStatus,
+            tileServerError = tileServerStartError,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 64.dp),
+        )
+    }
+}
+
+/**
+ * Slim non-blocking progress pill. Renders at the top of the map while the
+ * offline bundle is still being staged (or if something failed). Hidden once
+ * staging is [OfflineBootstrap.Status.Ready].
+ */
+@Composable
+private fun StagingPill(
+    status: OfflineBootstrap.Status,
+    tileServerError: String?,
+    modifier: Modifier = Modifier,
+) {
+    val errorText = (status as? OfflineBootstrap.Status.Failed)?.message
+        ?: tileServerError
+    val staging = status as? OfflineBootstrap.Status.Staging
+
+    AnimatedVisibility(
+        visible = errorText != null || staging != null,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = modifier,
+    ) {
+        Card(
+            shape = RoundedCornerShape(50),
+            colors = CardDefaults.cardColors(
+                containerColor = if (errorText != null) Color(0xFFB71C1C) else Color(0xFF111111),
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (errorText == null) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    val pct = staging?.let {
+                        if (it.total > 0) (it.done * 100 / it.total) else 0
+                    } ?: 0
+                    Text(
+                        "Preparing offline maps… $pct%",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                } else {
+                    Text(
+                        "Offline data unavailable",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -355,37 +529,39 @@ private fun ModeSelector(
     onSelect: (Mode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(50),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+    val colors = EmergencyTheme.colors
+    val typography = EmergencyTheme.typography
+
+    Row(
+        modifier = modifier
+            .clip(EmergencyShapes.full)
+            .background(colors.surface)
+            .border(1.dp, colors.line, EmergencyShapes.full)
+            .padding(4.dp),
     ) {
-        Row(modifier = Modifier.padding(4.dp)) {
-            Mode.entries.forEach { m ->
-                val selected = m == current
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
-                        .clickable { onSelect(m) }
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            m.icon,
-                            contentDescription = m.label,
-                            tint = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            m.label,
-                            color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                        )
-                    }
-                }
+        Mode.entries.forEach { m ->
+            val selected = m == current
+            val fg = if (selected) colors.accentInk else colors.text
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(EmergencyShapes.full)
+                    .background(if (selected) colors.accent else Color.Transparent)
+                    .clickable { onSelect(m) }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
+                Icon(
+                    m.icon,
+                    contentDescription = m.label,
+                    tint = fg,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = m.label,
+                    style = typography.listItem,
+                    color = fg,
+                )
             }
         }
     }
@@ -401,37 +577,42 @@ private fun RouteInfoCard(
     modifier: Modifier = Modifier,
 ) {
     poi ?: return
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+    val colors = EmergencyTheme.colors
+    val typography = EmergencyTheme.typography
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(EmergencyShapes.hero)
+            .background(colors.surface)
+            .border(1.dp, colors.line, EmergencyShapes.hero),
     ) {
         Row(
-            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier = Modifier
                     .size(56.dp)
                     .clip(CircleShape)
-                    .background(categoryColor(poi.category)),
+                    .background(colors.panel),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     categoryIcon(poi.category),
                     contentDescription = poi.category,
-                    tint = Color.White,
-                    modifier = Modifier.size(30.dp),
+                    tint = categoryColor(poi.category),
+                    modifier = Modifier.size(28.dp),
                 )
             }
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    poi.name,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF111111),
+                    text = poi.name,
+                    style = typography.listItem,
+                    color = colors.text,
                     maxLines = 2,
                 )
                 Spacer(Modifier.size(4.dp))
@@ -440,20 +621,33 @@ private fun RouteInfoCard(
                         CircularProgressIndicator(
                             modifier = Modifier.size(14.dp),
                             strokeWidth = 2.dp,
+                            color = colors.textDim,
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("Calculating route…", fontSize = 13.sp, color = Color.Gray)
+                        Text(
+                            text = "Calculating route…",
+                            style = typography.helper,
+                            color = colors.textDim,
+                        )
                     }
                     route != null -> Text(
-                        "${formatDistance(route.distanceM)}  ·  ${formatDuration(route.durationS)} ${mode.label.lowercase()}",
-                        fontSize = 14.sp,
-                        color = Color(0xFF555555),
+                        text = "${formatDistance(route.distanceM)}  ·  ${formatDuration(route.durationS)} ${mode.label.lowercase()}",
+                        style = typography.helper,
+                        color = colors.textDim,
                     )
-                    else -> Text("Routing failed", fontSize = 13.sp, color = Color(0xFFB71C1C))
+                    else -> Text(
+                        text = "Routing failed",
+                        style = typography.helper,
+                        color = colors.danger,
+                    )
                 }
             }
             IconButton(onClick = onDismiss) {
-                Icon(Icons.Default.Close, contentDescription = "Close")
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "Close",
+                    tint = colors.textFaint,
+                )
             }
         }
     }
@@ -470,14 +664,13 @@ private fun formatDuration(seconds: Double): String {
 // ─── Map layers ──────────────────────────────────────────────────────────────
 
 // Adds the POI source + layers to the style. POIs are loaded from
-// app/src/main/assets/pois-nl.geojson (produced by data-pipeline/extract_pois.py)
-// and aggregated client-side via MapLibre clustering — without that, rendering
-// 128k+ pins at low zoom levels would stutter.
+// app/src/main/assets/pois-nl.geojson and aggregated client-side via MapLibre
+// clustering — without that, rendering dense pins at low zoom would stutter.
 private fun addPoiLayer(context: Context, style: Style) {
     POI_CATEGORIES.forEach { name ->
         val resId = context.resources.getIdentifier("ic_poi_$name", "drawable", context.packageName)
         if (resId != 0) {
-            BitmapFactory.decodeResource(context.resources, resId)?.let { bmp ->
+            drawableToBitmap(context, resId)?.let { bmp ->
                 style.addImage("$name-icon", bmp)
             }
         }
@@ -501,11 +694,20 @@ private fun addPoiLayer(context: Context, style: Style) {
     Thread {
         try {
             val outFile = java.io.File(context.filesDir, "pois-nl.geojson")
-            if (!outFile.exists()) {
-                Log.d(TAG, "Copying pois-nl.geojson from assets…")
+            val versionFile = java.io.File(context.filesDir, "pois-nl.version")
+            val cachedVersion = versionFile.takeIf { it.exists() }
+                ?.runCatching { readText().trim().toInt() }?.getOrNull() ?: -1
+            val needsCopy = !outFile.exists() || cachedVersion != POI_BUNDLE_VERSION
+            if (needsCopy) {
+                Log.d(
+                    TAG,
+                    "Copying pois-nl.geojson from assets (cached=$cachedVersion, " +
+                        "current=$POI_BUNDLE_VERSION)…",
+                )
                 context.assets.open("pois-nl.geojson").use { input ->
                     outFile.outputStream().use { output -> input.copyTo(output) }
                 }
+                versionFile.writeText(POI_BUNDLE_VERSION.toString())
                 Log.d(TAG, "Copied pois-nl.geojson (${outFile.length() / 1024} KB) to ${outFile.absolutePath}")
             } else {
                 Log.d(TAG, "Reusing existing pois-nl.geojson (${outFile.length() / 1024} KB)")
@@ -532,19 +734,13 @@ private fun addPoiLayer(context: Context, style: Style) {
         Expression.stop("pharmacy",            "#43A047"),
         Expression.stop("police",              "#1E40AF"),
         Expression.stop("fire",                "#B71C1C"),
-        Expression.stop("shelter",             "#00897B"),
         Expression.stop("water",               "#29B6F6"),
         Expression.stop("toilet",              "#6D4C41"),
-        Expression.stop("metro",               "#5E35B1"),
-        Expression.stop("parking_underground", "#455A64"),
         Expression.stop("bunker",              "#424242"),
         Expression.stop("fuel",                "#F9A825"),
         Expression.stop("supermarket",         "#7CB342"),
         Expression.stop("atm",                 "#00ACC1"),
         Expression.stop("phone",               "#8E24AA"),
-        Expression.stop("school",              "#FFB300"),
-        Expression.stop("community",           "#3949AB"),
-        Expression.stop("worship",             "#6A1B9A"),
     )
 
     val unclustered = Expression.not(Expression.has("point_count"))
@@ -614,40 +810,84 @@ private fun addRouteLayer(style: Style): GeoJsonSource {
     return source
 }
 
-// ─── Network ─────────────────────────────────────────────────────────────────
+// Two stacked circles: a translucent halo so the dot stays visible over busy
+// basemap colors, and the solid blue puck on top with a white ring (matches
+// the standard Maps you-are-here treatment).
+private fun addUserLocationLayer(style: Style): GeoJsonSource {
+    val source = GeoJsonSource("user-location-source")
+    style.addSource(source)
+    style.addLayer(
+        CircleLayer("user-location-halo", "user-location-source").withProperties(
+            PropertyFactory.circleColor("#1E88E5"),
+            PropertyFactory.circleOpacity(0.18f),
+            PropertyFactory.circleRadius(18f),
+        ),
+    )
+    style.addLayer(
+        CircleLayer("user-location-dot", "user-location-source").withProperties(
+            PropertyFactory.circleColor("#1E88E5"),
+            PropertyFactory.circleRadius(7f),
+            PropertyFactory.circleStrokeColor("#FFFFFF"),
+            PropertyFactory.circleStrokeWidth(2.5f),
+        ),
+    )
+    return source
+}
 
-private suspend fun brouterRoute(from: LatLng, to: LatLng, profile: String): RouteResult? =
-    withContext(Dispatchers.IO) {
-        try {
-            val url = URL(
-                "https://brouter.de/brouter?lonlats=" +
-                    "${from.longitude},${from.latitude}|${to.longitude},${to.latitude}" +
-                    "&profile=$profile&alternativeidx=0&format=geojson"
-            )
-            val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 15_000
-            conn.readTimeout = 30_000
-            val body = conn.inputStream.bufferedReader().use { it.readText() }
-            val feature = JSONObject(body).getJSONArray("features").getJSONObject(0)
-            val props = feature.getJSONObject("properties")
-            val coords = feature.getJSONObject("geometry").getJSONArray("coordinates")
-            val polyline = (0 until coords.length()).map {
-                val pt = coords.getJSONArray(it)
-                LatLng(pt.getDouble(1), pt.getDouble(0))
-            }
-            RouteResult(
-                polyline = polyline,
-                distanceM = props.getString("track-length").toDouble(),
-                durationS = props.getString("total-time").toDouble(),
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "BRouter failed: $profile", e)
-            null
-        }
-    }
+// Marker for the currently selected destination. Uses the same `category` icon
+// expression as the POI layer so the visual matches a tapped pin, but renders
+// from its own source — so destinations supplied via `initialDestination`
+// (e.g. from the chat tool) are always visible, even when they aren't part of
+// the bundled POIs.
+private fun addSelectedDestinationLayer(style: Style): GeoJsonSource {
+    val source = GeoJsonSource("selected-dest-source")
+    style.addSource(source)
+    style.addLayer(
+        CircleLayer("selected-dest-halo", "selected-dest-source").withProperties(
+            PropertyFactory.circleColor("#C0392B"),
+            PropertyFactory.circleOpacity(0.22f),
+            PropertyFactory.circleRadius(20f),
+        ),
+    )
+    style.addLayer(
+        CircleLayer("selected-dest-dot", "selected-dest-source").withProperties(
+            PropertyFactory.circleColor("#C0392B"),
+            PropertyFactory.circleRadius(11f),
+            PropertyFactory.circleStrokeColor("#FFFFFF"),
+            PropertyFactory.circleStrokeWidth(2.5f),
+        ),
+    )
+    style.addLayer(
+        SymbolLayer("selected-dest-icon", "selected-dest-source").withProperties(
+            PropertyFactory.iconImage(
+                Expression.concat(Expression.get("category"), Expression.literal("-icon"))
+            ),
+            PropertyFactory.iconSize(0.22f),
+            PropertyFactory.iconAllowOverlap(true),
+            PropertyFactory.iconIgnorePlacement(true),
+        ),
+    )
+    return source
+}
+
+// `BitmapFactory.decodeResource` returns null for vector drawables, so we
+// rasterize via Drawable.draw() ourselves. Falls back to a 96px square when
+// the drawable has no intrinsic size (raw shapes).
+private fun drawableToBitmap(context: Context, resId: Int): Bitmap? {
+    val drawable = ContextCompat.getDrawable(context, resId) ?: return null
+    if (drawable is BitmapDrawable) return drawable.bitmap
+    val w = drawable.intrinsicWidth.takeIf { it > 0 } ?: 96
+    val h = drawable.intrinsicHeight.takeIf { it > 0 } ?: 96
+    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    drawable.setBounds(0, 0, w, h)
+    drawable.draw(Canvas(bmp))
+    return bmp
+}
+
+// ─── GPS ─────────────────────────────────────────────────────────────────────
 
 @SuppressLint("MissingPermission")
-private suspend fun getUserLocation(context: Context): LatLng? {
+internal suspend fun getUserLocation(context: Context): LatLng? {
     val granted = ActivityCompat.checkSelfPermission(
         context, Manifest.permission.ACCESS_FINE_LOCATION
     ) == PackageManager.PERMISSION_GRANTED
@@ -662,20 +902,26 @@ private suspend fun getUserLocation(context: Context): LatLng? {
     }
 }
 
-// ─── PDOK basemap style ──────────────────────────────────────────────────────
+// ─── Offline basemap style ───────────────────────────────────────────────────
 
-private const val PDOK_BRT_STYLE = """
+// MapLibre 10.x doesn't ship an mbtiles:// scheme handler, so the offline
+// tile pack is served by [MbtilesServer] over loopback HTTP. The port is
+// OS-assigned at runtime, hence the URL has to be threaded into the style
+// JSON instead of being a constant.
+private fun buildOfflineStyle(tileUrlTemplate: String): String = """
 {
   "version": 8,
   "sources": {
-    "pdok-brt": {
+    "nl-offline": {
       "type": "raster",
-      "tiles": ["https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png"],
+      "tiles": ["$tileUrlTemplate"],
       "tileSize": 256,
+      "minzoom": 5,
+      "maxzoom": 13,
       "attribution": "© Kadaster"
     }
   },
   "layers": [
-    {"id": "pdok-brt-layer", "type": "raster", "source": "pdok-brt"}
+    {"id": "nl-offline-layer", "type": "raster", "source": "nl-offline"}
   ]
 }"""

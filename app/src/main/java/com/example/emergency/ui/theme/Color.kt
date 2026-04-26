@@ -25,18 +25,18 @@ data class EmergencyColors(
 )
 
 val LightEmergencyColors = EmergencyColors(
-    bg = Color(0xFFFFFFFF),
+    bg = Color(0xFFF9FAFB),
     surface = Color(0xFFFFFFFF),
-    panel = Color(0xFFF7F7F5),
-    panel2 = Color(0xFFEFEEEA),
-    line = Color(0xFFE7E6E1),
-    text = Color(0xFF1A1A1A),
-    textDim = Color(0xFF6B6B66),
-    textFaint = Color(0xFF9A9A93),
-    accent = Color(0xFF1A1A1A),
+    panel = Color(0xFFF1F5F9),
+    panel2 = Color(0xFFE2E8F0),
+    line = Color(0xFFE2E8F0),
+    text = Color(0xFF1E293B),
+    textDim = Color(0xFF64748B),
+    textFaint = Color(0xFF94A3B8),
+    accent = Color(0xFFEF4444),
     accentInk = Color(0xFFFFFFFF),
-    danger = Color(0xFFC0392B),
-    dangerSoft = Color(0xFFFBEDE8),
+    danger = Color(0xFFEF4444),
+    dangerSoft = Color(0xFFFEE2E2),
     safety = Color(0xFFD97706),
     map = Color(0xFFEEF0EC),
     mapPath = Color(0xFFD6DAD1),
@@ -59,6 +59,8 @@ data class SemanticColors(
     val statusOk: Color,
     val badgeNew: Color,
     val badgeNewInk: Color,
+    val mapToolBg: Color,
+    val mapToolInk: Color,
 )
 
 val LightSemanticColors = SemanticColors(
@@ -74,6 +76,51 @@ val LightSemanticColors = SemanticColors(
     statusOk = Color(0xFF16A34A),
     badgeNew = Color(0xFFC2410C),
     badgeNewInk = Color(0xFFFFFFFF),
+    mapToolBg = Color(0xFFDDEFE9),
+    mapToolInk = Color(0xFF0F766E),
 )
 
 val LocalSemanticColors = staticCompositionLocalOf { LightSemanticColors }
+
+@Immutable
+data class ToolPalette(
+    val bg: Color,
+    val fg: Color,
+)
+
+@Immutable
+data class ToolPalettes(
+    val firstAid: ToolPalette,
+    val abcCheck: ToolPalette,
+    val map: ToolPalette,
+    val getOut: ToolPalette,
+)
+
+// Tinted bg + saturated fg per design language. Chroma stays ≤ 0.18.
+// Mapped from oklch tokens in DESIGN_LANGUAGE.md / state.jsx.
+val LightToolPalettes = ToolPalettes(
+    firstAid = ToolPalette(bg = Color(0xFFFEE2E2), fg = Color(0xFFEF4444)),
+    abcCheck = ToolPalette(bg = Color(0xFFEDE9FE), fg = Color(0xFF6D28D9)),
+    map      = ToolPalette(bg = Color(0xFFD1FAE5), fg = Color(0xFF059669)),
+    getOut   = ToolPalette(bg = Color(0xFFFEF3C7), fg = Color(0xFFD97706)),
+)
+
+val LocalToolPalettes = staticCompositionLocalOf { LightToolPalettes }
+
+@Immutable
+data class PackPalette(
+    val light: Color,
+    val dark: Color,
+)
+
+// Two-tone gradients per pack identity. Abstract shape only.
+// Mapped from oklch tokens in packs.jsx.
+val PackPalettes: Map<String, PackPalette> = mapOf(
+    "kingsday-ams"    to PackPalette(Color(0xFFF0B97D), Color(0xFFD2723A)),
+    "ams-base"        to PackPalette(Color(0xFFA9C3DE), Color(0xFF4A6FAB)),
+    "flooding-nl"     to PackPalette(Color(0xFFA9C4DC), Color(0xFF36548E)),
+    "power-outage-nl" to PackPalette(Color(0xFFEFB57E), Color(0xFF3F3850)),
+    "rotterdam-base"  to PackPalette(Color(0xFF9DCCD0), Color(0xFF4D8AA0)),
+)
+
+val DefaultPackPalette = PackPalette(Color(0xFFE7E6E1), Color(0xFFB7B6B0))

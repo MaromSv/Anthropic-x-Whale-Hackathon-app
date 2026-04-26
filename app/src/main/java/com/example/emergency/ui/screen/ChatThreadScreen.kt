@@ -14,16 +14,23 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.layout.ContentScale
@@ -42,8 +49,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import com.example.emergency.ui.screen.chat.AbcCheckCard
 import com.example.emergency.ui.screen.chat.ChatInputBar
 import com.example.emergency.ui.screen.chat.CprWalkthroughCard
+import com.example.emergency.ui.screen.chat.MapToolCard
+import com.example.emergency.ui.screen.map.MapDestination
+import org.json.JSONObject
 import com.example.emergency.ui.screen.common.SubScreenTopBar
 import com.example.emergency.ui.state.ChatRole
 import com.example.emergency.ui.state.ChatThreadUiState
@@ -57,9 +68,15 @@ fun ChatThreadScreen(
     onSend: (String) -> Unit,
     onMic: () -> Unit = {},
     onCamera: () -> Unit = {},
+    onGallery: () -> Unit = {},
     pendingImages: List<String> = emptyList(),
     onRemoveImage: (String) -> Unit = {},
-    onOpenTool: (String) -> Unit = {},
+    onOpenTool: (ToolCallInfo) -> Unit = {},
+    onNewChat: () -> Unit = {},
+    showDownloadModelButton: Boolean = false,
+    onDownloadModel: (() -> Unit)? = null,
+    isDownloadingModel: Boolean = false,
+    downloadProgress: Int = 0,
 ) {
     val colors = EmergencyTheme.colors
     val typography = EmergencyTheme.typography
@@ -77,9 +94,23 @@ fun ChatThreadScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.bg)
-            .statusBarsPadding(),
+            .statusBarsPadding()
+            .imePadding(),
     ) {
-        SubScreenTopBar(title = state.title, onBack = onBack)
+        SubScreenTopBar(
+            title = state.title,
+            onBack = onBack,
+            trailing = {
+                IconButton(onClick = onNewChat) {
+                    Icon(
+                        imageVector = Icons.Outlined.Add,
+                        contentDescription = "New chat",
+                        tint = colors.text,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            },
+        )
 
         if (state.messages.isEmpty() && !state.isAssistantTyping) {
             Box(
@@ -88,11 +119,21 @@ fun ChatThreadScreen(
                     .fillMaxWidth(),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = "Start a new conversation below.",
-                    style = typography.body,
-                    color = colors.textFaint,
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "Start a new conversation below.",
+                        style = typography.body,
+                        color = colors.textFaint,
+                    )
+                    if (showDownloadModelButton && onDownloadModel != null) {
+                        androidx.compose.material3.Button(
+                            onClick = onDownloadModel,
+                            modifier = Modifier.padding(top = 24.dp)
+                        ) {
+                            Text("Download Model Weights")
+                        }
+                    }
+                }
             }
         } else {
             LazyColumn(
@@ -119,16 +160,72 @@ fun ChatThreadScreen(
                         }
                         ChatRole.TOOL -> {
                             val toolCall = message.toolCall!!
-                            if (toolCall.toolName == "cpr_instructions" && toolCall.status == "success") {
-                                CprWalkthroughCard(onClick = { onOpenTool(toolCall.toolName) })
-                            } else {
-                                ToolCallBubble(toolCall = toolCall)
+                            when {
+                                toolCall.toolName == "cpr_instructions" && toolCall.status == "success" ->
+                                    CprWalkthroughCard(onClick = { onOpenTool(toolCall) })
+                                toolCall.toolName == "abc_check" && toolCall.status == "success" ->
+                                    AbcCheckCard(onClick = { onOpenTool(toolCall) })
+                                toolCall.toolName == "find_nearest" && toolCall.status == "success" -> {
+                                    val parsed = parseFindNearestCard(toolCall.result)
+                                    if (parsed != null) {
+                                        MapToolCard(
+                                            title = parsed.first,
+                                            destination = parsed.second,
+                                            onClick = { onOpenTool(toolCall) },
+                                        )
+                                    } else {
+                                        ToolCallBubble(toolCall = toolCall)
+                                    }
+                                }
+                                else -> ToolCallBubble(toolCall = toolCall)
                             }
                         }
                     }
                 }
                 if (state.isAssistantTyping) {
                     item(key = "typing-indicator") { AssistantTypingBubble() }
+                }
+                if (isDownloadingModel) {
+                    item(key = "download-progress") {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = if (downloadProgress < 0) "Downloading model..." else "Downloading model... $downloadProgress%",
+                                style = EmergencyTheme.typography.body,
+                                color = EmergencyTheme.colors.textFaint,
+                            )
+                            if (downloadProgress < 0) {
+                                androidx.compose.material3.LinearProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth(0.75f).height(8.dp)
+                                )
+                            } else {
+                                androidx.compose.material3.LinearProgressIndicator(
+                                    progress = { downloadProgress / 100f },
+                                    modifier = Modifier.fillMaxWidth(0.75f).height(8.dp)
+                                )
+                            }
+                        }
+                    }
+                } else if (showDownloadModelButton && onDownloadModel != null) {
+                    item(key = "download-button") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            androidx.compose.material3.Button(
+                                onClick = onDownloadModel,
+                            ) {
+                                Text("Download Model Weights")
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -144,6 +241,7 @@ fun ChatThreadScreen(
             },
             onMic = onMic,
             onCamera = onCamera,
+            onGallery = onGallery,
             pendingImages = pendingImages,
             onRemoveImage = onRemoveImage,
             modifier = Modifier.navigationBarsPadding(),
@@ -251,8 +349,8 @@ private fun UserMessageBubbleWithImages(message: ChatMessage) {
                 .widthIn(max = 280.dp)
                 .clip(EmergencyShapes.card)
                 .background(colors.accent)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             message.imagePaths.forEach { path ->
                 AsyncImage(
@@ -260,7 +358,7 @@ private fun UserMessageBubbleWithImages(message: ChatMessage) {
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(200.dp)
+                        .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp)),
                 )
             }
@@ -269,6 +367,7 @@ private fun UserMessageBubbleWithImages(message: ChatMessage) {
                     text = message.text,
                     style = typography.body,
                     color = colors.accentInk,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 )
             }
         }
@@ -344,4 +443,27 @@ private fun ToolCallBubble(toolCall: ToolCallInfo) {
             }
         }
     }
+}
+
+private fun parseFindNearestCard(raw: String): Pair<String, MapDestination>? {
+    val trimmed = raw.trim().removeSuffix("...")
+    if (!trimmed.startsWith("{")) return null
+    return runCatching {
+        val obj = JSONObject(trimmed)
+        val name = obj.optString("name").takeIf { it.isNotBlank() } ?: return@runCatching null
+        val category = obj.optString("category").takeIf { it.isNotBlank() } ?: return@runCatching null
+        val lat = obj.optDouble("lat", Double.NaN).takeIf { !it.isNaN() } ?: return@runCatching null
+        val lon = obj.optDouble("lon", Double.NaN).takeIf { !it.isNaN() } ?: return@runCatching null
+        val pretty = categoryLabel(category)
+        val title = if (!name.equals(pretty, ignoreCase = true)) "$pretty \u00B7 $name" else name
+        title to MapDestination(name, category, lat, lon)
+    }.getOrNull()
+}
+
+private fun categoryLabel(category: String): String = when (category) {
+    "first_aid" -> "Medical post"
+    "aed" -> "AED"
+    "atm" -> "ATM"
+    "parking_underground" -> "Parking"
+    else -> category.replace('_', ' ').replaceFirstChar { it.uppercase() }
 }

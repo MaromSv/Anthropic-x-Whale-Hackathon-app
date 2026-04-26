@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -34,6 +34,9 @@ fun ChatScreen(
     onSend: (String) -> Unit = {},
     onMic: () -> Unit = {},
     onCamera: () -> Unit = {},
+    onGallery: () -> Unit = {},
+    pendingImages: List<String> = emptyList(),
+    onRemoveImage: (String) -> Unit = {},
 ) {
     val colors = EmergencyTheme.colors
     var composer by rememberSaveable { mutableStateOf("") }
@@ -42,7 +45,8 @@ fun ChatScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.bg)
-            .statusBarsPadding(),
+            .statusBarsPadding()
+            .imePadding(),
     ) {
         ChatTopBar(
             onMenuClick = onMenuClick,
@@ -76,14 +80,16 @@ fun ChatScreen(
             text = composer,
             onTextChange = { composer = it },
             onSend = {
-                if (composer.isNotEmpty()) {
+                if (composer.isNotEmpty() || pendingImages.isNotEmpty()) {
                     onSend(composer)
                     composer = ""
                 }
             },
             onMic = onMic,
             onCamera = onCamera,
-            modifier = Modifier.navigationBarsPadding(),
+            onGallery = onGallery,
+            pendingImages = pendingImages,
+            onRemoveImage = onRemoveImage,
         )
     }
 }

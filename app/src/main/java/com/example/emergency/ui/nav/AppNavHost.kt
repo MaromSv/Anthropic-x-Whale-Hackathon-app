@@ -17,9 +17,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.example.emergency.agent.ToolManager
 import com.example.emergency.llm.GemmaBackend
 import com.example.emergency.llm.GemmaLlm
@@ -37,6 +39,7 @@ import com.example.emergency.ui.screen.FirstAidScreen
 import com.example.emergency.ui.screen.GetOutScreen
 import com.example.emergency.ui.screen.HomeShell
 import com.example.emergency.ui.screen.MapScreen
+import com.example.emergency.ui.screen.map.MapDestination
 import com.example.emergency.ui.screen.PersonalInfoScreen
 import com.example.emergency.ui.screen.SettingsScreen
 import com.example.emergency.ui.screen.cpr.CprWalkthroughScreen
@@ -55,9 +58,38 @@ import com.example.emergency.ui.state.SamplePersonalInfoUiState
 import com.example.emergency.ui.state.SampleSettingsUiState
 enum class ModelStatus { IDLE, LOADING, READY, ERROR }
 
+
 @Composable
 fun AppNavHost() {
     val context = LocalContext.current
+
+    // Track if model download is in progress
+    var isDownloadingModel by remember { mutableStateOf(false) }
+    var showDownloadModelButton by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableStateOf(-1) } // -1 = indeterminate
+    var downloadId by remember { mutableStateOf<Long?>(null) }
+
+    // Check if model file exists
+    LaunchedEffect(Unit) {
+        val modelPath = GemmaLlm.defaultModelPath(context)
+        showDownloadModelButton = !File(modelPath).exists()
+    }
+
+    // Download callback
+    fun onDownloadModel() {
+        val modelUrl = "https://drive.usercontent.google.com/download?id=1Ckz7pdwTlx-_yC5Hg0pnHjM1V48ClVhE&export=download&confirm=t"
+        val modelPath = GemmaLlm.defaultModelPath(context)
+        isDownloadingModel = true
+        showDownloadModelButton = false // Hide button while downloading
+        downloadProgress = -1 // indeterminate until we know total size
+        val id = com.example.emergency.util.ModelDownloadUtil.downloadModel(
+            context,
+            modelUrl,
+            File(modelPath)
+        )
+        downloadId = id
+    }
+
     val navController = rememberNavController()
     val threadMessages = remember { mutableStateListOf<ChatMessage>() }
     val pendingImages = remember { mutableStateListOf<String>() }
@@ -65,6 +97,39 @@ fun AppNavHost() {
     var modelStatus by remember { mutableStateOf(ModelStatus.IDLE) }
     var modelError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+
+    // Poll DownloadManager for progress
+    LaunchedEffect(isDownloadingModel, downloadId) {
+        if (isDownloadingModel && downloadId != null) {
+            val dm = context.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+            var downloading = true
+            while (downloading) {
+                val q = android.app.DownloadManager.Query().setFilterById(downloadId!!)
+                val cursor = dm.query(q)
+                if (cursor != null && cursor.moveToFirst()) {
+                    val bytesDownloaded = cursor.getLong(cursor.getColumnIndexOrThrow(android.app.DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+                    val bytesTotal = cursor.getLong(cursor.getColumnIndexOrThrow(android.app.DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+                    val status = cursor.getInt(cursor.getColumnIndexOrThrow(android.app.DownloadManager.COLUMN_STATUS))
+                    downloadProgress = if (bytesTotal > 0) (bytesDownloaded * 100L / bytesTotal).toInt() else -1
+                    if (status == android.app.DownloadManager.STATUS_SUCCESSFUL) {
+                        downloading = false
+                        isDownloadingModel = false
+                        showDownloadModelButton = false
+                        downloadId = null
+                        // Reset model status so it retries loading on next message
+                        modelStatus = ModelStatus.IDLE
+                    } else if (status == android.app.DownloadManager.STATUS_FAILED) {
+                        downloading = false
+                        isDownloadingModel = false
+                        showDownloadModelButton = true
+                        downloadId = null
+                    }
+                }
+                cursor?.close()
+                kotlinx.coroutines.delay(500)
+            }
+        }
+    }
 
     // Create LLM and ToolManager instances
     val gemma = remember { GemmaLlm(context) }
@@ -173,7 +238,6 @@ fun AppNavHost() {
                             text = "Loading model..."
                         )
                     }
-                    
                     try {
                         withContext(Dispatchers.IO) {
                             val modelPath = GemmaLlm.defaultModelPath(context)
@@ -188,21 +252,32 @@ fun AppNavHost() {
                         }
                         modelStatus = ModelStatus.READY
                         Log.d("AppNavHost", "Model loaded successfully")
-                        
                         // Clear loading message
                         val idx2 = threadMessages.indexOfFirst { it.id == assistantId }
                         if (idx2 >= 0) {
                             threadMessages[idx2] = threadMessages[idx2].copy(text = "")
                         }
                     } catch (e: Exception) {
-                        Log.e("AppNavHost", "Failed to load model", e)
-                        modelError = e.message ?: "Unknown error"
-                        modelStatus = ModelStatus.ERROR
-                        val idx2 = threadMessages.indexOfFirst { it.id == assistantId }
-                        if (idx2 >= 0) {
-                            threadMessages[idx2] = threadMessages[idx2].copy(
-                                text = "Error loading model: ${e.message ?: "Unknown error"}"
-                            )
+                        if (e is com.example.emergency.llm.ModelFileMissingException) {
+                            // Model file missing: show download button and friendly message
+                            showDownloadModelButton = true
+                            modelStatus = ModelStatus.ERROR
+                            val idx2 = threadMessages.indexOfFirst { it.id == assistantId }
+                            if (idx2 >= 0) {
+                                threadMessages[idx2] = threadMessages[idx2].copy(
+                                    text = "Model not downloaded. Please download to continue."
+                                )
+                            }
+                        } else {
+                            Log.e("AppNavHost", "Failed to load model", e)
+                            modelError = e.message ?: "Unknown error"
+                            modelStatus = ModelStatus.ERROR
+                            val idx2 = threadMessages.indexOfFirst { it.id == assistantId }
+                            if (idx2 >= 0) {
+                                threadMessages[idx2] = threadMessages[idx2].copy(
+                                    text = "Error loading model: ${e.message ?: "Unknown error"}"
+                                )
+                            }
                         }
                         isAssistantTyping = false
                         return@launch
@@ -211,16 +286,59 @@ fun AppNavHost() {
                 
                 // Generate response with tool calling support
                 if (gemma.isLoaded) {
+                    // Reset conversation so the model starts fresh from the
+                    // system prompt — this prevents it from copying its own
+                    // previous (sometimes malformed) tool-call XML. We then
+                    // prepend a sanitised summary of the last few exchanges
+                    // to the user prompt so the model retains context.
+                    withContext(Dispatchers.IO) { gemma.resetConversation() }
+
+                    // Build a clean context recap from recent messages.
+                    val history = threadMessages
+                        .dropLast(2) // drop current user msg + empty assistant placeholder
+                        .takeLast(8) // last ~4 exchanges
+                    val contextPrefix = if (history.isNotEmpty()) {
+                        buildString {
+                            appendLine("[Conversation history]")
+                            for (msg in history) {
+                                when (msg.role) {
+                                    ChatRole.USER -> appendLine("User: ${msg.text}")
+                                    ChatRole.ASSISTANT -> {
+                                        val clean = toolManager.removeToolCallBlocks(msg.text).take(200)
+                                        if (clean.isNotBlank()) appendLine("Assistant: $clean")
+                                    }
+                                    ChatRole.TOOL -> {
+                                        val tc = msg.toolCall
+                                        if (tc != null) appendLine("(Tool ${tc.toolName} → ${tc.status})")
+                                    }
+                                }
+                            }
+                            appendLine("[End of history]\n")
+                            appendLine("Now the user says:")
+                        }
+                    } else ""
+
+                    val augmentedPrompt = contextPrefix + text
+
                     var fullResponse = ""
                     
-                    // Stream the initial response
+                    // Stream the initial response. Keep the full text (including any
+                    // <tool_call> XML the LLM emits) in fullResponse for the parser, but
+                    // strip anything from the first '<' onward before showing it in the
+                    // chat bubble so the user never sees raw XML.
                     withContext(Dispatchers.IO) {
-                        gemma.generateStreamingWithImages(text, images).collect { token ->
+                        gemma.generateStreamingWithImages(augmentedPrompt, images).collect { token ->
                             fullResponse += token
+                            val ltIdx = fullResponse.indexOf('<')
+                            val displayText = if (ltIdx >= 0) {
+                                fullResponse.substring(0, ltIdx).trim()
+                            } else {
+                                fullResponse
+                            }
                             val idx = threadMessages.indexOfFirst { it.id == assistantId }
                             if (idx >= 0) {
                                 val current = threadMessages[idx]
-                                threadMessages[idx] = current.copy(text = fullResponse)
+                                threadMessages[idx] = current.copy(text = displayText)
                             }
                         }
                     }
@@ -234,73 +352,85 @@ fun AppNavHost() {
                         Log.d("AppNavHost", "Tool call $i: ${call.toolName} with params: ${call.params}")
                     }
                     if (toolCalls.isNotEmpty()) {
-                        // Execute tools
-                        for (toolCall in toolCalls) {
-                            // Add tool call message
-                            val toolIndex = threadMessages.size
-                            threadMessages.add(
-                                ChatMessage(
-                                    id = "t$toolIndex",
-                                    role = ChatRole.TOOL,
-                                    text = "",
-                                    timestampLabel = "now",
-                                    toolCall = ToolCallInfo(
-                                        toolName = toolCall.toolName,
-                                        status = "calling"
-                                    )
+                        // When a tool call is found, HIDE the original assistant
+                        // bubble — the model often puts a preamble answer before
+                        // the <tool_call> which would duplicate the follow-up.
+                        val assistantIdx = threadMessages.indexOfFirst { it.id == assistantId }
+                        val preambleText = toolManager.removeToolCallBlocks(fullResponse).trim()
+                        if (assistantIdx >= 0) {
+                            threadMessages[assistantIdx] = threadMessages[assistantIdx].copy(text = "")
+                        }
+
+                        // Execute only the FIRST tool call (ignore duplicates)
+                        val toolCall = toolCalls.first()
+
+                        // Add tool call message
+                        val toolIndex = threadMessages.size
+                        threadMessages.add(
+                            ChatMessage(
+                                id = "t$toolIndex",
+                                role = ChatRole.TOOL,
+                                text = "",
+                                timestampLabel = "now",
+                                toolCall = ToolCallInfo(
+                                    toolName = toolCall.toolName,
+                                    status = "calling"
                                 )
                             )
-                            
-                            // Execute tool
-                            Log.d("AppNavHost", "Executing tool: ${toolCall.toolName}")
-                            val result = withContext(Dispatchers.IO) {
-                                toolManager.executeTool(toolCall)
-                            }
-                            Log.d("AppNavHost", "Tool ${toolCall.toolName} result: success=${result.success}, data=${result.data}, error=${result.error}")
-                            
-                            // Update tool call message with result
-                            val idx = threadMessages.indexOfFirst { it.id == "t$toolIndex" }
-                            if (idx >= 0) {
-                                threadMessages[idx] = threadMessages[idx].copy(
-                                    toolCall = ToolCallInfo(
-                                        toolName = toolCall.toolName,
-                                        status = if (result.success) "success" else "error",
-                                        result = result.data.take(200) + if (result.data.length > 200) "..." else ""
-                                    )
-                                )
-                            }
-                            
-                            // Generate follow-up response with tool result
-                            val followUpPrompt = "Tool ${toolCall.toolName} returned: ${result.data}\n\nBased on this information, provide your response to the user."
-                            
-                            // Clear previous assistant message and stream new response
-                            val assistantIdx = threadMessages.indexOfFirst { it.id == assistantId }
-                            if (assistantIdx >= 0) {
-                                threadMessages[assistantIdx] = threadMessages[assistantIdx].copy(
-                                    text = toolManager.removeToolCallBlocks(fullResponse)
-                                )
-                            }
-                            
-                            // Add new assistant message for tool-based response
-                            val newAssistantIndex = threadMessages.size
-                            val newAssistantId = "a$newAssistantIndex"
-                            threadMessages.add(
-                                ChatMessage(
-                                    id = newAssistantId,
-                                    role = ChatRole.ASSISTANT,
-                                    text = "",
-                                    timestampLabel = "now",
+                        )
+
+                        // Execute tool
+                        Log.d("AppNavHost", "Executing tool: ${toolCall.toolName}")
+                        val result = withContext(Dispatchers.IO) {
+                            toolManager.executeTool(toolCall)
+                        }
+                        Log.d("AppNavHost", "Tool ${toolCall.toolName} result: success=${result.success}, data=${result.data}, error=${result.error}")
+
+                        // Update tool call message with result
+                        val tidx = threadMessages.indexOfFirst { it.id == "t$toolIndex" }
+                        if (tidx >= 0) {
+                            threadMessages[tidx] = threadMessages[tidx].copy(
+                                toolCall = ToolCallInfo(
+                                    toolName = toolCall.toolName,
+                                    status = if (result.success) "success" else "error",
+                                    result = result.data.take(200) + if (result.data.length > 200) "..." else ""
                                 )
                             )
-                            
-                            var toolResponse = ""
-                            withContext(Dispatchers.IO) {
-                                gemma.generateStreaming(followUpPrompt).collect { token ->
-                                    toolResponse += token
-                                    val idx = threadMessages.indexOfFirst { it.id == newAssistantId }
-                                    if (idx >= 0) {
-                                        threadMessages[idx] = threadMessages[idx].copy(text = toolResponse)
+                        }
+
+                        // CPR and ABC are fully handled by their walkthrough cards
+                        if (toolCall.toolName != "cpr_instructions" && toolCall.toolName != "abc_check") {
+                            if (result.success) {
+                                // Generate a follow-up response from the tool result
+                                val followUpPrompt = "Tool result for ${toolCall.toolName}:\n${result.data}\n\nDo NOT call any tools. Give the user a brief, numbered answer (max 6 steps, ≤20 words each). No XML tags. No preamble."
+
+                                val newAssistantIndex = threadMessages.size
+                                val newAssistantId = "a$newAssistantIndex"
+                                threadMessages.add(
+                                    ChatMessage(
+                                        id = newAssistantId,
+                                        role = ChatRole.ASSISTANT,
+                                        text = "",
+                                        timestampLabel = "now",
+                                    )
+                                )
+
+                                var toolResponse = ""
+                                withContext(Dispatchers.IO) {
+                                    gemma.generateStreaming(followUpPrompt).collect { token ->
+                                        toolResponse += token
+                                        val clean = toolManager.removeToolCallBlocks(toolResponse)
+                                        val ridx = threadMessages.indexOfFirst { it.id == newAssistantId }
+                                        if (ridx >= 0) {
+                                            threadMessages[ridx] = threadMessages[ridx].copy(text = clean)
+                                        }
                                     }
+                                }
+                            } else if (preambleText.isNotBlank()) {
+                                // Tool failed but the model gave a direct answer — show it
+                                val aidx = threadMessages.indexOfFirst { it.id == assistantId }
+                                if (aidx >= 0) {
+                                    threadMessages[aidx] = threadMessages[aidx].copy(text = preambleText)
                                 }
                             }
                         }
@@ -341,9 +471,18 @@ fun AppNavHost() {
         pendingCameraPath = imageFile.absolutePath
         requestCameraPermission.launch(android.Manifest.permission.CAMERA)
     }
+    
+    fun onGallery() {
+        pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
 
     fun onRemoveImage(path: String) {
         pendingImages.remove(path)
+    }
+
+    fun startNewChat() {
+        threadMessages.clear()
+        modelStatus = ModelStatus.IDLE
     }
 
     NavHost(
@@ -355,10 +494,10 @@ fun AppNavHost() {
                 homeState = SampleHomeUiState,
                 drawerState = SampleDrawerUiState,
                 onToolClick = { id ->
-                    navController.navigate(id.toRoute().path)
+                    navController.navigate(id.toRoute().navigatePath)
                 },
                 onDrawerItemClick = { id ->
-                    navController.navigate(id.toRoute().path)
+                    navController.navigate(id.toRoute().navigatePath)
                 },
                 onSend = { text ->
                     sendUserMessage(text)
@@ -366,6 +505,11 @@ fun AppNavHost() {
                         launchSingleTop = true
                     }
                 },
+                onNewChatClick = { startNewChat() },
+                onCamera = { onCamera() },
+                onGallery = { onGallery() },
+                pendingImages = pendingImages,
+                onRemoveImage = { path -> onRemoveImage(path) },
             )
         }
         composable(Route.ChatThread.path) {
@@ -376,15 +520,34 @@ fun AppNavHost() {
                     isAssistantTyping = isAssistantTyping,
                 ),
                 onBack = { navController.popBackStack() },
+                onNewChat = {
+                    startNewChat()
+                    navController.popBackStack(Route.Home.path, inclusive = false)
+                },
                 onSend = { text -> sendUserMessage(text) },
                 onCamera = { onCamera() },
+                onGallery = { onGallery() },
                 pendingImages = pendingImages,
                 onRemoveImage = { path -> onRemoveImage(path) },
-                onOpenTool = { name ->
-                    if (name == "cpr_instructions") {
-                        navController.navigate(Route.CprWalkthrough.path)
+                onOpenTool = { toolCall ->
+                    when (toolCall.toolName) {
+                        "cpr_instructions" -> navController.navigate(Route.CprWalkthrough.path)
+                        "abc_check" -> navController.navigate(Route.AbcCheck.path)
+                        "find_nearest" -> {
+                            val dest = parseFindNearestDestination(toolCall.result)
+                            val target = if (dest != null) {
+                                Route.Map.withDestination(dest.lat, dest.lon, dest.name, dest.category)
+                            } else {
+                                "map"
+                            }
+                            navController.navigate(target)
+                        }
                     }
                 },
+                showDownloadModelButton = showDownloadModelButton,
+                onDownloadModel = if (showDownloadModelButton) ::onDownloadModel else null,
+                isDownloadingModel = isDownloadingModel,
+                downloadProgress = downloadProgress,
             )
         }
         composable(Route.DataPacks.path) {
@@ -405,10 +568,26 @@ fun AppNavHost() {
                 onBack = { navController.popBackStack() },
             )
         }
-        composable(Route.Map.path) {
+        composable(
+            Route.Map.path,
+            arguments = listOf(
+                navArgument("lat") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("lon") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("name") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("category") { type = NavType.StringType; nullable = true; defaultValue = null },
+            ),
+        ) { backStackEntry ->
+            val lat = backStackEntry.arguments?.getString("lat")?.toDoubleOrNull()
+            val lon = backStackEntry.arguments?.getString("lon")?.toDoubleOrNull()
+            val name = backStackEntry.arguments?.getString("name")
+            val category = backStackEntry.arguments?.getString("category")
+            val dest = if (lat != null && lon != null && !name.isNullOrBlank() && !category.isNullOrBlank()) {
+                MapDestination(name, category, lat, lon)
+            } else null
             MapScreen(
                 state = SampleMapUiState,
                 onBack = { navController.popBackStack() },
+                initialDestination = dest,
             )
         }
         composable(Route.FirstAid.path) {
@@ -422,7 +601,11 @@ fun AppNavHost() {
             AbcCheckScreen(
                 state = SampleAbcCheckUiState,
                 onBack = { navController.popBackStack() },
-                onStartCpr = { navController.navigate(Route.CprWalkthrough.path) },
+                onStartCpr = {
+                    navController.navigate(Route.CprWalkthrough.path) {
+                        popUpTo(Route.AbcCheck.path) { inclusive = true }
+                    }
+                },
             )
         }
         composable(Route.CprWalkthrough.path) {
@@ -446,39 +629,97 @@ fun AppNavHost() {
 
 private fun buildSystemPrompt(toolManager: ToolManager): String {
     return """
-You are an emergency medical assistant AI that provides concise, step-by-step advice in urgent medical situations. Your responses must be brief, focused on essential actions, and suitable for laypeople. Always advise calling emergency services if the situation may be life-threatening.
+You are Mark, an emergency medical assistant. Your job is to call the correct tool and then return a brief, numbered answer for a layperson.
 
 ${toolManager.getToolDescriptions()}
 
-**Critical Guidelines:**
-- Keep responses extremely brief (maximum 2-3 concise steps, each ≤20 words)
-- Use numbered bullets for clarity
-- Before offering actions, assess symptoms, risk level, and urgency
-- ALWAYS use tools when they would be helpful:
-  - Use get_location when the user needs emergency services or their location
-  - Use search_medical_database when you need medical protocols or treatment information
-  - Use cpr_instructions when someone needs CPR guidance
-- Do NOT provide lengthy explanations or medical jargon
-- If life-threatening, immediately advise to call emergency services
+**How to choose a tool — follow this decision tree in order:**
 
-**Example interactions:**
-User: "Someone collapsed and isn't breathing"
-Assistant: 
-<tool_call>
-cpr_instructions
-</tool_call>
+1. User mentions NOT BREATHING, no pulse, cardiac arrest, or explicitly asks for CPR → call `cpr_instructions`.
+2. User says someone is unresponsive/collapsed/passed out/fainted/won't wake up BUT has NOT confirmed they are not breathing → call `abc_check` first so they can assess Airway-Breathing-Circulation.
+3. After abc_check, if the user reports the person is NOT breathing → THEN call `cpr_instructions`.
+4. Medical question (wound, burn, bleeding, fracture, poisoning, choking, etc.) → call `search_medical_database` with the specific condition as query.
+5. User asks to find the nearest hospital, pharmacy, AED, police, fire station, shelter, doctor, water, toilet, metro, fuel, supermarket, ATM, phone, school, bunker → call `find_nearest` with the matching category.
+   Supported categories: hospital, doctor, first_aid, aed, pharmacy, police, fire, shelter, water, toilet, metro, parking_underground, bunker, fuel, supermarket, atm, phone, school, community, worship.
+6. User asks for their location or directions to a specific place → call `get_location`.
 
-User: "Where am I? I need an ambulance"
+**Output rules:**
+- Your FIRST response must be the `<tool_call>` block — nothing before it, nothing after it.
+- After the tool returns, reply with a numbered list (max 6 short steps, ≤20 words each). No preamble, no medical jargon.
+
+**Examples:**
+
+User: "Someone collapsed, she's not breathing!"
 Assistant:
 <tool_call>
-get_location
-</tool_call>
+cpr_instructions
+<tool_call>
 
-User: "How do I treat a severe burn?"
+User: "Someone collapsed and isn't responding — what do I check first?"
+Assistant:
+<tool_call>
+abc_check
+<tool_call>
+
+User (after abc_check): "She's not breathing"
+Assistant:
+<tool_call>
+cpr_instructions
+<tool_call>
+
+User: "Where is the nearest pharmacy?"
+Assistant:
+<tool_call>
+find_nearest
+category=pharmacy
+<tool_call>
+
+User: "I need to find an AED"
+Assistant:
+<tool_call>
+find_nearest
+category=aed
+<tool_call>
+
+User: "Where is the closest police station?"
+Assistant:
+<tool_call>
+find_nearest
+category=police
+<tool_call>
+
+User: "Find me a hospital"
+Assistant:
+<tool_call>
+find_nearest
+category=hospital
+<tool_call>
+
+User: "I need shelter"
+Assistant:
+<tool_call>
+find_nearest
+category=shelter
+<tool_call>
+
+User: "[image of bleeding wound] how do I apply a tourniquet?"
 Assistant:
 <tool_call>
 search_medical_database
-query=burn treatment
-</tool_call>
+query=tourniquet
+<tool_call>
     """.trimIndent()
+}
+
+private fun parseFindNearestDestination(raw: String): MapDestination? {
+    val trimmed = raw.trim().removeSuffix("...")
+    if (!trimmed.startsWith("{")) return null
+    return runCatching {
+        val obj = org.json.JSONObject(trimmed)
+        val name = obj.optString("name").takeIf { it.isNotBlank() } ?: return@runCatching null
+        val category = obj.optString("category").takeIf { it.isNotBlank() } ?: return@runCatching null
+        val lat = obj.optDouble("lat", Double.NaN).takeIf { !it.isNaN() } ?: return@runCatching null
+        val lon = obj.optDouble("lon", Double.NaN).takeIf { !it.isNaN() } ?: return@runCatching null
+        MapDestination(name, category, lat, lon)
+    }.getOrNull()
 }

@@ -21,18 +21,28 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.emergency.ui.theme.EmergencyShapes
 import com.example.emergency.ui.theme.EmergencyTheme
+
+// Hardcoded brand colors — never affected by theme
+private val MarkNavy = Color(0xFF1E293B)
+private val MarkRed = Color(0xFFEF4444)
 
 @Composable
 fun SubScreenTopBar(
     title: String,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val colors = EmergencyTheme.colors
-    val typography = EmergencyTheme.typography
 
     Box(
         modifier = modifier
@@ -60,13 +70,21 @@ fun SubScreenTopBar(
             )
         }
         Text(
-            text = title,
-            style = typography.appBarTitle,
-            color = colors.text,
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = 56.dp),
+            text = buildAnnotatedString {
+                withStyle(SpanStyle(color = MarkNavy, fontWeight = FontWeight.Bold, fontSize = 20.sp)) {
+                    append("mar")
+                }
+                withStyle(SpanStyle(color = MarkRed, fontWeight = FontWeight.Bold, fontSize = 20.sp)) {
+                    append("k")
+                }
+            },
+            modifier = Modifier.align(Alignment.Center),
         )
+        if (trailing != null) {
+            Box(modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)) {
+                trailing()
+            }
+        }
     }
 }
 

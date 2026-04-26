@@ -23,6 +23,9 @@ fun HomeShell(
     onSend: (String) -> Unit = {},
     onMic: () -> Unit = {},
     onCamera: () -> Unit = {},
+    onGallery: () -> Unit = {},
+    pendingImages: List<String> = emptyList(),
+    onRemoveImage: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val drawerController = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -48,6 +51,9 @@ fun HomeShell(
             onSend = onSend,
             onMic = onMic,
             onCamera = onCamera,
+            onGallery = onGallery,
+            pendingImages = pendingImages,
+            onRemoveImage = onRemoveImage,
         )
     }
 }

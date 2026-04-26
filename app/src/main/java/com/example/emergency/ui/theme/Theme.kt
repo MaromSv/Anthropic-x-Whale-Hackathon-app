@@ -5,14 +5,18 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.ui.graphics.Color
 
 private val MaterialLightScheme = lightColorScheme(
     background = LightEmergencyColors.bg,
     surface = LightEmergencyColors.surface,
+    surfaceVariant = LightEmergencyColors.panel,
     onBackground = LightEmergencyColors.text,
     onSurface = LightEmergencyColors.text,
     primary = LightEmergencyColors.accent,
     onPrimary = LightEmergencyColors.accentInk,
+    secondary = Color(0xFF1E293B),
+    onSecondary = Color(0xFFFFFFFF),
     outline = LightEmergencyColors.line,
     error = LightEmergencyColors.danger,
 )
@@ -32,6 +36,11 @@ object EmergencyTheme {
         @Composable
         @ReadOnlyComposable
         get() = LocalSemanticColors.current
+
+    val toolPalettes: ToolPalettes
+        @Composable
+        @ReadOnlyComposable
+        get() = LocalToolPalettes.current
 }
 
 @Composable
@@ -40,6 +49,7 @@ fun EmergencyTheme(content: @Composable () -> Unit) {
         LocalEmergencyColors provides LightEmergencyColors,
         LocalEmergencyTypography provides DefaultEmergencyTypography,
         LocalSemanticColors provides LightSemanticColors,
+        LocalToolPalettes provides LightToolPalettes,
     ) {
         MaterialTheme(
             colorScheme = MaterialLightScheme,
