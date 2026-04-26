@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -71,6 +73,10 @@ fun ChatThreadScreen(
     onRemoveImage: (String) -> Unit = {},
     onOpenTool: (ToolCallInfo) -> Unit = {},
     onNewChat: () -> Unit = {},
+    showDownloadModelButton: Boolean = false,
+    onDownloadModel: (() -> Unit)? = null,
+    isDownloadingModel: Boolean = false,
+    downloadProgress: Int = 0,
 ) {
     val colors = EmergencyTheme.colors
     val typography = EmergencyTheme.typography
@@ -113,11 +119,21 @@ fun ChatThreadScreen(
                     .fillMaxWidth(),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = "Start a new conversation below.",
-                    style = typography.body,
-                    color = colors.textFaint,
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "Start a new conversation below.",
+                        style = typography.body,
+                        color = colors.textFaint,
+                    )
+                    if (showDownloadModelButton && onDownloadModel != null) {
+                        androidx.compose.material3.Button(
+                            onClick = onDownloadModel,
+                            modifier = Modifier.padding(top = 24.dp)
+                        ) {
+                            Text("Download Model Weights")
+                        }
+                    }
+                }
             }
         } else {
             LazyColumn(
@@ -168,6 +184,48 @@ fun ChatThreadScreen(
                 }
                 if (state.isAssistantTyping) {
                     item(key = "typing-indicator") { AssistantTypingBubble() }
+                }
+                if (isDownloadingModel) {
+                    item(key = "download-progress") {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = if (downloadProgress < 0) "Downloading model..." else "Downloading model... $downloadProgress%",
+                                style = EmergencyTheme.typography.body,
+                                color = EmergencyTheme.colors.textFaint,
+                            )
+                            if (downloadProgress < 0) {
+                                androidx.compose.material3.LinearProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth(0.75f).height(8.dp)
+                                )
+                            } else {
+                                androidx.compose.material3.LinearProgressIndicator(
+                                    progress = { downloadProgress / 100f },
+                                    modifier = Modifier.fillMaxWidth(0.75f).height(8.dp)
+                                )
+                            }
+                        }
+                    }
+                } else if (showDownloadModelButton && onDownloadModel != null) {
+                    item(key = "download-button") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            androidx.compose.material3.Button(
+                                onClick = onDownloadModel,
+                            ) {
+                                Text("Download Model Weights")
+                            }
+                        }
+                    }
                 }
             }
         }

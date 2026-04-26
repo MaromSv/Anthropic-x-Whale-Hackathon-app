@@ -58,9 +58,38 @@ import com.example.emergency.ui.state.SamplePersonalInfoUiState
 import com.example.emergency.ui.state.SampleSettingsUiState
 enum class ModelStatus { IDLE, LOADING, READY, ERROR }
 
+
 @Composable
 fun AppNavHost() {
     val context = LocalContext.current
+
+    // Track if model download is in progress
+    var isDownloadingModel by remember { mutableStateOf(false) }
+    var showDownloadModelButton by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableStateOf(-1) } // -1 = indeterminate
+    var downloadId by remember { mutableStateOf<Long?>(null) }
+
+    // Check if model file exists
+    LaunchedEffect(Unit) {
+        val modelPath = GemmaLlm.defaultModelPath(context)
+        showDownloadModelButton = !File(modelPath).exists()
+    }
+
+    // Download callback
+    fun onDownloadModel() {
+        val modelUrl = "https://drive.usercontent.google.com/download?id=1Ckz7pdwTlx-_yC5Hg0pnHjM1V48ClVhE&export=download&confirm=t"
+        val modelPath = GemmaLlm.defaultModelPath(context)
+        isDownloadingModel = true
+        showDownloadModelButton = false // Hide button while downloading
+        downloadProgress = -1 // indeterminate until we know total size
+        val id = com.example.emergency.util.ModelDownloadUtil.downloadModel(
+            context,
+            modelUrl,
+            File(modelPath)
+        )
+        downloadId = id
+    }
+
     val navController = rememberNavController()
     val threadMessages = remember { mutableStateListOf<ChatMessage>() }
     val pendingImages = remember { mutableStateListOf<String>() }
@@ -68,6 +97,39 @@ fun AppNavHost() {
     var modelStatus by remember { mutableStateOf(ModelStatus.IDLE) }
     var modelError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+
+    // Poll DownloadManager for progress
+    LaunchedEffect(isDownloadingModel, downloadId) {
+        if (isDownloadingModel && downloadId != null) {
+            val dm = context.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+            var downloading = true
+            while (downloading) {
+                val q = android.app.DownloadManager.Query().setFilterById(downloadId!!)
+                val cursor = dm.query(q)
+                if (cursor != null && cursor.moveToFirst()) {
+                    val bytesDownloaded = cursor.getLong(cursor.getColumnIndexOrThrow(android.app.DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+                    val bytesTotal = cursor.getLong(cursor.getColumnIndexOrThrow(android.app.DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+                    val status = cursor.getInt(cursor.getColumnIndexOrThrow(android.app.DownloadManager.COLUMN_STATUS))
+                    downloadProgress = if (bytesTotal > 0) (bytesDownloaded * 100L / bytesTotal).toInt() else -1
+                    if (status == android.app.DownloadManager.STATUS_SUCCESSFUL) {
+                        downloading = false
+                        isDownloadingModel = false
+                        showDownloadModelButton = false
+                        downloadId = null
+                        // Reset model status so it retries loading on next message
+                        modelStatus = ModelStatus.IDLE
+                    } else if (status == android.app.DownloadManager.STATUS_FAILED) {
+                        downloading = false
+                        isDownloadingModel = false
+                        showDownloadModelButton = true
+                        downloadId = null
+                    }
+                }
+                cursor?.close()
+                kotlinx.coroutines.delay(500)
+            }
+        }
+    }
 
     // Create LLM and ToolManager instances
     val gemma = remember { GemmaLlm(context) }
@@ -138,12 +200,6 @@ fun AppNavHost() {
         onDispose { gemma.unload() }
     }
 
-    fun startNewChat() {
-        threadMessages.clear()
-        pendingImages.clear()
-        if (gemma.isLoaded) gemma.resetConversation()
-    }
-
     fun sendUserMessage(text: String) {
         val userIndex = threadMessages.size
         val images = pendingImages.toList()
@@ -182,7 +238,6 @@ fun AppNavHost() {
                             text = "Loading model..."
                         )
                     }
-                    
                     try {
                         withContext(Dispatchers.IO) {
                             val modelPath = GemmaLlm.defaultModelPath(context)
@@ -197,21 +252,32 @@ fun AppNavHost() {
                         }
                         modelStatus = ModelStatus.READY
                         Log.d("AppNavHost", "Model loaded successfully")
-                        
                         // Clear loading message
                         val idx2 = threadMessages.indexOfFirst { it.id == assistantId }
                         if (idx2 >= 0) {
                             threadMessages[idx2] = threadMessages[idx2].copy(text = "")
                         }
                     } catch (e: Exception) {
-                        Log.e("AppNavHost", "Failed to load model", e)
-                        modelError = e.message ?: "Unknown error"
-                        modelStatus = ModelStatus.ERROR
-                        val idx2 = threadMessages.indexOfFirst { it.id == assistantId }
-                        if (idx2 >= 0) {
-                            threadMessages[idx2] = threadMessages[idx2].copy(
-                                text = "Error loading model: ${e.message ?: "Unknown error"}"
-                            )
+                        if (e is com.example.emergency.llm.ModelFileMissingException) {
+                            // Model file missing: show download button and friendly message
+                            showDownloadModelButton = true
+                            modelStatus = ModelStatus.ERROR
+                            val idx2 = threadMessages.indexOfFirst { it.id == assistantId }
+                            if (idx2 >= 0) {
+                                threadMessages[idx2] = threadMessages[idx2].copy(
+                                    text = "Model not downloaded. Please download to continue."
+                                )
+                            }
+                        } else {
+                            Log.e("AppNavHost", "Failed to load model", e)
+                            modelError = e.message ?: "Unknown error"
+                            modelStatus = ModelStatus.ERROR
+                            val idx2 = threadMessages.indexOfFirst { it.id == assistantId }
+                            if (idx2 >= 0) {
+                                threadMessages[idx2] = threadMessages[idx2].copy(
+                                    text = "Error loading model: ${e.message ?: "Unknown error"}"
+                                )
+                            }
                         }
                         isAssistantTyping = false
                         return@launch
@@ -414,6 +480,11 @@ fun AppNavHost() {
         pendingImages.remove(path)
     }
 
+    fun startNewChat() {
+        threadMessages.clear()
+        modelStatus = ModelStatus.IDLE
+    }
+
     NavHost(
         navController = navController,
         startDestination = Route.Home.path,
@@ -473,6 +544,10 @@ fun AppNavHost() {
                         }
                     }
                 },
+                showDownloadModelButton = showDownloadModelButton,
+                onDownloadModel = if (showDownloadModelButton) ::onDownloadModel else null,
+                isDownloadingModel = isDownloadingModel,
+                downloadProgress = downloadProgress,
             )
         }
         composable(Route.DataPacks.path) {
@@ -501,11 +576,11 @@ fun AppNavHost() {
                 navArgument("name") { type = NavType.StringType; nullable = true; defaultValue = null },
                 navArgument("category") { type = NavType.StringType; nullable = true; defaultValue = null },
             ),
-        ) { entry ->
-            val lat = entry.arguments?.getString("lat")?.toDoubleOrNull()
-            val lon = entry.arguments?.getString("lon")?.toDoubleOrNull()
-            val name = entry.arguments?.getString("name")
-            val category = entry.arguments?.getString("category")
+        ) { backStackEntry ->
+            val lat = backStackEntry.arguments?.getString("lat")?.toDoubleOrNull()
+            val lon = backStackEntry.arguments?.getString("lon")?.toDoubleOrNull()
+            val name = backStackEntry.arguments?.getString("name")
+            val category = backStackEntry.arguments?.getString("category")
             val dest = if (lat != null && lon != null && !name.isNullOrBlank() && !category.isNullOrBlank()) {
                 MapDestination(name, category, lat, lon)
             } else null
