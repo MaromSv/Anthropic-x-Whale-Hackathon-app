@@ -12,6 +12,9 @@ A minimal **Expo + React Native (Android)** chatbot that runs a quantized **Gemm
 No API calls. No keys. The `.litertlm` model file lives on the phone and inference runs in-process.
 
 ---
+## Installation
+
+[Download Link](https://drive.google.com/file/d/1sFg1heSZwPxKzWE0QGI-ZeXEyQhy5-Hz/view) Android Only.
 
 ## The App Experience
 
