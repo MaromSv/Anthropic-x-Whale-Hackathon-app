@@ -220,6 +220,40 @@ fun AppNavHost() {
                 
                 // Generate response with tool calling support
                 if (gemma.isLoaded) {
+                    // Reset conversation so the model starts fresh from the
+                    // system prompt — this prevents it from copying its own
+                    // previous (sometimes malformed) tool-call XML. We then
+                    // prepend a sanitised summary of the last few exchanges
+                    // to the user prompt so the model retains context.
+                    withContext(Dispatchers.IO) { gemma.resetConversation() }
+
+                    // Build a clean context recap from recent messages.
+                    val history = threadMessages
+                        .dropLast(2) // drop current user msg + empty assistant placeholder
+                        .takeLast(8) // last ~4 exchanges
+                    val contextPrefix = if (history.isNotEmpty()) {
+                        buildString {
+                            appendLine("[Conversation history]")
+                            for (msg in history) {
+                                when (msg.role) {
+                                    ChatRole.USER -> appendLine("User: ${msg.text}")
+                                    ChatRole.ASSISTANT -> {
+                                        val clean = toolManager.removeToolCallBlocks(msg.text).take(200)
+                                        if (clean.isNotBlank()) appendLine("Assistant: $clean")
+                                    }
+                                    ChatRole.TOOL -> {
+                                        val tc = msg.toolCall
+                                        if (tc != null) appendLine("(Tool ${tc.toolName} → ${tc.status})")
+                                    }
+                                }
+                            }
+                            appendLine("[End of history]\n")
+                            appendLine("Now the user says:")
+                        }
+                    } else ""
+
+                    val augmentedPrompt = contextPrefix + text
+
                     var fullResponse = ""
                     
                     // Stream the initial response. Keep the full text (including any
@@ -227,7 +261,7 @@ fun AppNavHost() {
                     // strip anything from the first '<' onward before showing it in the
                     // chat bubble so the user never sees raw XML.
                     withContext(Dispatchers.IO) {
-                        gemma.generateStreamingWithImages(text, images).collect { token ->
+                        gemma.generateStreamingWithImages(augmentedPrompt, images).collect { token ->
                             fullResponse += token
                             val ltIdx = fullResponse.indexOf('<')
                             val displayText = if (ltIdx >= 0) {
@@ -252,79 +286,85 @@ fun AppNavHost() {
                         Log.d("AppNavHost", "Tool call $i: ${call.toolName} with params: ${call.params}")
                     }
                     if (toolCalls.isNotEmpty()) {
-                        // Execute tools
-                        for (toolCall in toolCalls) {
-                            // Add tool call message
-                            val toolIndex = threadMessages.size
-                            threadMessages.add(
-                                ChatMessage(
-                                    id = "t$toolIndex",
-                                    role = ChatRole.TOOL,
-                                    text = "",
-                                    timestampLabel = "now",
-                                    toolCall = ToolCallInfo(
-                                        toolName = toolCall.toolName,
-                                        status = "calling"
-                                    )
+                        // When a tool call is found, HIDE the original assistant
+                        // bubble — the model often puts a preamble answer before
+                        // the <tool_call> which would duplicate the follow-up.
+                        val assistantIdx = threadMessages.indexOfFirst { it.id == assistantId }
+                        val preambleText = toolManager.removeToolCallBlocks(fullResponse).trim()
+                        if (assistantIdx >= 0) {
+                            threadMessages[assistantIdx] = threadMessages[assistantIdx].copy(text = "")
+                        }
+
+                        // Execute only the FIRST tool call (ignore duplicates)
+                        val toolCall = toolCalls.first()
+
+                        // Add tool call message
+                        val toolIndex = threadMessages.size
+                        threadMessages.add(
+                            ChatMessage(
+                                id = "t$toolIndex",
+                                role = ChatRole.TOOL,
+                                text = "",
+                                timestampLabel = "now",
+                                toolCall = ToolCallInfo(
+                                    toolName = toolCall.toolName,
+                                    status = "calling"
                                 )
                             )
-                            
-                            // Execute tool
-                            Log.d("AppNavHost", "Executing tool: ${toolCall.toolName}")
-                            val result = withContext(Dispatchers.IO) {
-                                toolManager.executeTool(toolCall)
-                            }
-                            Log.d("AppNavHost", "Tool ${toolCall.toolName} result: success=${result.success}, data=${result.data}, error=${result.error}")
-                            
-                            // Update tool call message with result
-                            val idx = threadMessages.indexOfFirst { it.id == "t$toolIndex" }
-                            if (idx >= 0) {
-                                threadMessages[idx] = threadMessages[idx].copy(
-                                    toolCall = ToolCallInfo(
-                                        toolName = toolCall.toolName,
-                                        status = if (result.success) "success" else "error",
-                                        result = result.data.take(200) + if (result.data.length > 200) "..." else ""
-                                    )
-                                )
-                            }
-                            
-                            // Strip the <tool_call> block from the original assistant
-                            // bubble so any pre-tool preamble (if present) stays clean.
-                            val assistantIdx = threadMessages.indexOfFirst { it.id == assistantId }
-                            if (assistantIdx >= 0) {
-                                threadMessages[assistantIdx] = threadMessages[assistantIdx].copy(
-                                    text = toolManager.removeToolCallBlocks(fullResponse)
-                                )
-                            }
+                        )
 
-                            // CPR and ABC are fully handled by their walkthrough cards — no
-                            // follow-up LLM response needed (a second bubble confuses).
-                            if (toolCall.toolName == "cpr_instructions" || toolCall.toolName == "abc_check") {
-                                continue
-                            }
+                        // Execute tool
+                        Log.d("AppNavHost", "Executing tool: ${toolCall.toolName}")
+                        val result = withContext(Dispatchers.IO) {
+                            toolManager.executeTool(toolCall)
+                        }
+                        Log.d("AppNavHost", "Tool ${toolCall.toolName} result: success=${result.success}, data=${result.data}, error=${result.error}")
 
-                            // For other tools, generate a follow-up response from the result.
-                            val followUpPrompt = "The user asked: \"$text\"\n\nTool ${toolCall.toolName} returned:\n${result.data}\n\nUsing this and your system instructions, give the user the final brief, numbered answer."
-
-                            val newAssistantIndex = threadMessages.size
-                            val newAssistantId = "a$newAssistantIndex"
-                            threadMessages.add(
-                                ChatMessage(
-                                    id = newAssistantId,
-                                    role = ChatRole.ASSISTANT,
-                                    text = "",
-                                    timestampLabel = "now",
+                        // Update tool call message with result
+                        val tidx = threadMessages.indexOfFirst { it.id == "t$toolIndex" }
+                        if (tidx >= 0) {
+                            threadMessages[tidx] = threadMessages[tidx].copy(
+                                toolCall = ToolCallInfo(
+                                    toolName = toolCall.toolName,
+                                    status = if (result.success) "success" else "error",
+                                    result = result.data.take(200) + if (result.data.length > 200) "..." else ""
                                 )
                             )
+                        }
 
-                            var toolResponse = ""
-                            withContext(Dispatchers.IO) {
-                                gemma.generateStreaming(followUpPrompt).collect { token ->
-                                    toolResponse += token
-                                    val idx = threadMessages.indexOfFirst { it.id == newAssistantId }
-                                    if (idx >= 0) {
-                                        threadMessages[idx] = threadMessages[idx].copy(text = toolResponse)
+                        // CPR and ABC are fully handled by their walkthrough cards
+                        if (toolCall.toolName != "cpr_instructions" && toolCall.toolName != "abc_check") {
+                            if (result.success) {
+                                // Generate a follow-up response from the tool result
+                                val followUpPrompt = "Tool result for ${toolCall.toolName}:\n${result.data}\n\nDo NOT call any tools. Give the user a brief, numbered answer (max 6 steps, ≤20 words each). No XML tags. No preamble."
+
+                                val newAssistantIndex = threadMessages.size
+                                val newAssistantId = "a$newAssistantIndex"
+                                threadMessages.add(
+                                    ChatMessage(
+                                        id = newAssistantId,
+                                        role = ChatRole.ASSISTANT,
+                                        text = "",
+                                        timestampLabel = "now",
+                                    )
+                                )
+
+                                var toolResponse = ""
+                                withContext(Dispatchers.IO) {
+                                    gemma.generateStreaming(followUpPrompt).collect { token ->
+                                        toolResponse += token
+                                        val clean = toolManager.removeToolCallBlocks(toolResponse)
+                                        val ridx = threadMessages.indexOfFirst { it.id == newAssistantId }
+                                        if (ridx >= 0) {
+                                            threadMessages[ridx] = threadMessages[ridx].copy(text = clean)
+                                        }
                                     }
+                                }
+                            } else if (preambleText.isNotBlank()) {
+                                // Tool failed but the model gave a direct answer — show it
+                                val aidx = threadMessages.indexOfFirst { it.id == assistantId }
+                                if (aidx >= 0) {
+                                    threadMessages[aidx] = threadMessages[aidx].copy(text = preambleText)
                                 }
                             }
                         }
@@ -538,61 +578,61 @@ User: "Someone collapsed, she's not breathing!"
 Assistant:
 <tool_call>
 cpr_instructions
-</tool_call>
+<tool_call>
 
 User: "Someone collapsed and isn't responding — what do I check first?"
 Assistant:
 <tool_call>
 abc_check
-</tool_call>
+<tool_call>
 
 User (after abc_check): "She's not breathing"
 Assistant:
 <tool_call>
 cpr_instructions
-</tool_call>
+<tool_call>
 
 User: "Where is the nearest pharmacy?"
 Assistant:
 <tool_call>
 find_nearest
 category=pharmacy
-</tool_call>
+<tool_call>
 
 User: "I need to find an AED"
 Assistant:
 <tool_call>
 find_nearest
 category=aed
-</tool_call>
+<tool_call>
 
 User: "Where is the closest police station?"
 Assistant:
 <tool_call>
 find_nearest
 category=police
-</tool_call>
+<tool_call>
 
 User: "Find me a hospital"
 Assistant:
 <tool_call>
 find_nearest
 category=hospital
-</tool_call>
+<tool_call>
 
 User: "I need shelter"
 Assistant:
 <tool_call>
 find_nearest
 category=shelter
-</tool_call>
+<tool_call>
 
 User: "[image of bleeding wound] how do I apply a tourniquet?"
 Assistant:
 <tool_call>
 search_medical_database
 query=tourniquet
-</tool_call>
+<tool_call>
     """.trimIndent()
 }
 

@@ -46,29 +46,59 @@ class ToolManager(context: Context) {
     
     /**
      * Parses tool calls from the assistant's response.
-     * Looks for <tool_call>...</tool_call> blocks.
+     * Handles malformed tags the LLM sometimes produces such as:
+     *   <tool_call>...</ tool_call>
+     *   <tool_call>...</call>
+     *   <tool_tool_call>...</tool_call>
+     *   <tool_call>...</tool_ call>
+     * We use a generous regex that captures the body between any
+     * "tool" opening tag and any closing tag that starts with "</".
      */
     fun parseToolCalls(response: String): List<ToolCall> {
         val toolCalls = mutableListOf<ToolCall>()
-        val regex = """<tool_call>(.*?)</tool_call>""".toRegex(RegexOption.DOT_MATCHES_ALL)
-        
+
+        // Generous open tag: <tool_call>, <tool_tool_call>, < tool_call >, etc.
+        // Generous close tag: </tool_call>, </call>, </tool_tool_call>, etc.
+        val regex = """<\s*(?:tool_)*tool_call\s*>(.*?)<\s*/\s*(?:tool_)*(?:tool_)?call\s*>"""
+            .toRegex(setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+
         regex.findAll(response).forEach { match ->
             val content = match.groupValues[1].trim()
             val lines = content.lines().map { it.trim() }.filter { it.isNotEmpty() }
-            
+
             if (lines.isNotEmpty()) {
-                val toolName = lines[0]
-                val params = lines.drop(1)
-                    .mapNotNull { line ->
+                // The first line is the tool name — strip any leftover XML-like chars
+                val toolName = lines[0].replace(Regex("[<>]"), "").trim()
+                if (toolName.isNotEmpty() && toolName in tools) {
+                    val paramLines = lines.drop(1)
+                    val params = mutableMapOf<String, String>()
+                    val orphans = mutableListOf<String>()
+
+                    for (line in paramLines) {
                         val parts = line.split("=", limit = 2)
-                        if (parts.size == 2) parts[0].trim() to parts[1].trim() else null
+                        if (parts.size == 2) {
+                            params[parts[0].trim()] = parts[1].trim()
+                        } else {
+                            // Orphan value (no key=value format)
+                            orphans.add(line)
+                        }
                     }
-                    .toMap()
-                
-                toolCalls.add(ToolCall(toolName, params))
+
+                    // If no "query" param but there are orphan lines, treat
+                    // the first one as the query (common model mistake).
+                    if ("query" !in params && orphans.isNotEmpty()) {
+                        params["query"] = orphans.joinToString(" ")
+                    }
+                    // If "category" is missing for find_nearest, same logic
+                    if (toolName == "find_nearest" && "category" !in params && orphans.isNotEmpty()) {
+                        params["category"] = orphans.first().lowercase()
+                    }
+
+                    toolCalls.add(ToolCall(toolName, params))
+                }
             }
         }
-        
+
         return toolCalls
     }
     
@@ -95,9 +125,16 @@ class ToolManager(context: Context) {
     }
     
     /**
-     * Removes tool call blocks from the response text.
+     * Removes tool call blocks from the response text (matches the same
+     * generous pattern as [parseToolCalls]).
      */
     fun removeToolCallBlocks(response: String): String {
-        return response.replace("""<tool_call>.*?</tool_call>""".toRegex(RegexOption.DOT_MATCHES_ALL), "").trim()
+        return response
+            .replace(
+                """<\s*(?:tool_)*tool_call\s*>.*?<\s*/\s*(?:tool_)*(?:tool_)?call\s*>"""
+                    .toRegex(setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)),
+                ""
+            )
+            .trim()
     }
 }
