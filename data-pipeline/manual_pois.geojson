@@ -1,0 +1,50 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [5.069097356221, 52.36496853523636] },
+      "properties": { "category": "bunker", "name": "Forteiland Pampus" }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [5.069097356221, 52.36496853523636] },
+      "properties": { "category": "bunker", "name": "Schuilkelder UB" }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [4.845341015909134, 52.379424078654694] },
+      "properties": { "category": "bunker", "name": "Fietstunnel Leeuwendalersweg" }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [4.909701428347918, 52.36153885183674] },
+      "properties": { "category": "bunker", "name": "Metro Weesperplein" }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [4.9123753657603, 52.25539762753983] },
+      "properties": { "category": "bunker", "name": "Fort Waver-Amstel" }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [4.875101893702143, 52.37364985892775] },
+      "properties": { "category": "bunker", "name": "Atoombunker Verpleeghuis de Poort" }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [4.959722901067443, 52.29601729599944] },
+      "properties": { "category": "bunker", "name": "Noodhospitaal AMC" }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [4.821314585848659, 52.37909361717687] },
+      "properties": { "category": "bunker", "name": "Schuilplaats Lodewijk van Deysselstraat" }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [4.791157, 52.395344] },
+      "properties": { "category": "bunker", "name": "Bedrijfsschuilplaats Dienst Publieke Werken" }
+    }
+  ]
+}
