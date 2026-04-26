@@ -82,7 +82,8 @@ fun ChatThreadScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.bg)
-            .statusBarsPadding(),
+            .statusBarsPadding()
+            .imePadding(),
     ) {
         SubScreenTopBar(title = state.title, onBack = onBack)
 
@@ -166,7 +167,6 @@ fun ChatThreadScreen(
             onGallery = onGallery,
             pendingImages = pendingImages,
             onRemoveImage = onRemoveImage,
-            modifier = Modifier.imePadding(),
         )
     }
 }

@@ -45,7 +45,8 @@ fun ChatScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.bg)
-            .statusBarsPadding(),
+            .statusBarsPadding()
+            .imePadding(),
     ) {
         ChatTopBar(
             onMenuClick = onMenuClick,
@@ -89,7 +90,6 @@ fun ChatScreen(
             onGallery = onGallery,
             pendingImages = pendingImages,
             onRemoveImage = onRemoveImage,
-            modifier = Modifier.imePadding(),
         )
     }
 }
