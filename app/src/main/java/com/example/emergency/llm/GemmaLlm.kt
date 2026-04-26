@@ -137,7 +137,7 @@ class GemmaLlm(private val context: Context) {
         fun defaultModelPath(context: Context): String =
             File(
                 context.getExternalFilesDir(null) ?: context.filesDir,
-                "gemma-3n-E2B-it-int4.litertlm",
+                "gemma-4-E2B-it.litertlm",
             ).absolutePath
     }
 }
