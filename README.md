@@ -1,90 +1,81 @@
-# Anthropic-x-Whale-Hackathon — Gemma 4 On-Device Chatbot
+# ZSM — Frontend (On-Device Emergency Copilot)
 
-A minimal **Expo + React Native (Android)** chatbot that runs **Gemma 4 E2B-it** fully on-device via Google's official [LiteRT-LM](https://ai.google.dev/edge/litert/lm/android) Kotlin API (`com.google.ai.edge.litertlm:litertlm-android`).
+![Status](https://img.shields.io/badge/status-hackathon-blue)
+![Platform](https://img.shields.io/badge/platform-Android-3DDC84)
+![UI](https://img.shields.io/badge/ui-Jetpack%20Compose-4285F4)
+![Model](https://img.shields.io/badge/model-Gemma%20on--device-673AB7)
+![Maps](https://img.shields.io/badge/maps-MapLibre-1E88E5)
+
+When people need help fast, the app keeps things simple: ask a question, get practical guidance, and instantly see nearby critical points on the map — all while staying fully usable offline.
+A minimal **Expo + React Native (Android)** chatbot that runs a quantized **Gemma 4 E2B-it** fully on-device via Google's official [LiteRT-LM](https://ai.google.dev/edge/litert/lm/android) Kotlin API (`com.google.ai.edge.litertlm:litertlm-android`).
 
 No API calls. No keys. The `.litertlm` model file lives on the phone and inference runs in-process.
 
-## Project layout
+---
 
-- [App.tsx](App.tsx) — chat UI with streaming output
-- [modules/gemma-llm/index.ts](modules/gemma-llm/index.ts) — TypeScript bridge to the native module
-- [modules/gemma-llm/android/src/main/java/expo/modules/gemmallm/GemmaLlmModule.kt](modules/gemma-llm/android/src/main/java/expo/modules/gemmallm/GemmaLlmModule.kt) — Kotlin module wrapping `Engine` + `Conversation`
-- [modules/gemma-llm/android/build.gradle](modules/gemma-llm/android/build.gradle) — depends on `com.google.ai.edge.litertlm:litertlm-android`
-- [app.json](app.json) — Expo config (uses `expo-dev-client`, Android only)
+## The App Experience
 
-## Prerequisites
+The main screen combines a crisis-focused chat assistant and a live map with nearby emergency points of interest.
 
-- Node 20+
-- JDK 17, Android SDK (API 34), Android Studio
-- A physical Android device (recommended) — GPU inference needs OpenCL; emulators rarely have it
-- ~3 GB free space on the device for the model
+![ZSM UI — chat and map](docs/chat_map.png)
 
-## 1. Install
+---
 
-```powershell
-npm install
+## Frontend Architecture
+
+![Frontend diagram](docs/diagram.png)
+
+The mobile app is the runtime layer: it loads local Packs, runs retrieval and inference on-device, and presents the results through a fast chat + map interface.
+
+---
+
+## What the Frontend Does
+
+- Chat interface with streaming responses from a local Gemma model.
+- Retrieval-augmented answers from bundled Pack data (`core_medical`, local POIs, event-specific packs).
+- Interactive map with emergency POIs (hospital, AED, pharmacy, shelter, police, and more).
+- Tool-driven actions via app-side agents for CPR flow, GPS context, and medical retrieval.
+- Offline-first behavior after assets are installed on device.
+
+## Tech Stack
+
+- Kotlin + Jetpack Compose
+- Android SDK (`minSdk 26`, `targetSdk 36`)
+- Google LiteRT-LM (`com.google.ai.edge.litertlm:litertlm-android`)
+- Kotlin Coroutines + ViewModel
+- MapLibre Android SDK
+
+## Project Structure
+
+```text
+app/
+  src/main/java/com/example/emergency/
+    agent/      # Tool interfaces + tool manager + tools
+    llm/        # Gemma runtime wrapper
+    ui/         # Navigation, screens, state, theme
+    MainActivity.kt
+  src/main/assets/
+    core_medical.json
+    pois-nl.geojson
 ```
 
-## 2. Generate the Android project
+## Run Locally (Android)
 
-Expo Go cannot load native modules; use a dev client.
+### Prerequisites
 
-```powershell
-npx expo prebuild --platform android --clean
+- Android Studio (latest stable)
+- JDK 11+
+- Android SDK + emulator/device
+
+### Build & Run
+
+```bash
+./gradlew :app:assembleDebug
+./gradlew :app:installDebug
 ```
 
-## 3. Get the Gemma 4 E2B `.litertlm` file
+Or open the project in Android Studio and run the `app` configuration.
 
-Go to the gated Hugging Face repo, sign in, accept the Gemma license, and download from the **Files** tab:
+## Backend Pipeline
 
-- https://huggingface.co/google/gemma-4-E2B-it-litert-lm-preview
-
-You'll get a `.litertlm` file. Rename it to `gemma-4-e2b-it.litertlm` to match `MODEL_FILENAME` in [App.tsx](App.tsx) — or change that constant to whatever the file is called.
-
-> Other `.litertlm` models are listed at [Hugging Face › LiteRT Community](https://huggingface.co/litert-community). To validate the pipeline before you have access, `Gemma3-1B-IT.litertlm` from that org works as a drop-in.
-
-## 4. Push the model onto the device
-
-```powershell
-# Build + install once so the app's documents dir exists
-npx expo run:android
-
-# Then push the model (replace the package id if you changed it in app.json)
-adb push .\gemma-4-e2b-it.litertlm `
-  /sdcard/Android/data/com.example.gemmachatbot/files/gemma-4-e2b-it.litertlm
-```
-
-If the app reports "Model not found", the banner shows the exact expected path — copy it and adjust the `adb push` destination.
-
-Alternative for development: place the file under `/sdcard/Download/` and change `MODEL_PATH` in [App.tsx](App.tsx) to `'/sdcard/Download/gemma-4-e2b-it.litertlm'`.
-
-## 5. Run
-
-```powershell
-npx expo run:android
-```
-
-In the app:
-
-1. Tap **Load model** — first load can take up to ~10 s (per the LiteRT-LM docs); it runs on a background coroutine.
-2. Type a prompt and hit **Send**. Tokens stream from `Conversation.sendMessageAsync`'s `Flow<Message>` and surface as `onPartialResult` events on the JS side.
-
-## Tuning
-
-In [App.tsx](App.tsx), `GemmaLlm.load({...})` accepts:
-
-| option | meaning |
-| --- | --- |
-| `modelPath` | absolute path to the `.litertlm` bundle |
-| `backend` | `0` = CPU, `1` = GPU (default), `2` = NPU |
-| `systemInstruction` | system prompt baked into the `Conversation` |
-| `topK`, `topP`, `temperature` | sampling (Gemma 4 defaults: `64 / 0.95 / 1.0`) |
-
-NPU requires bundled vendor libs — see the [LiteRT-LM NPU guide](https://ai.google.dev/edge/litert/lm/android).
-
-## Troubleshooting
-
-- **Cannot resolve `com.google.ai.edge.litertlm:litertlm-android`** — the AAR is on Google Maven, which Expo's prebuild already includes. If you customized `android/build.gradle`, ensure `google()` is in `repositories`.
-- **Crash on `engine.initialize()`** — usually a corrupted/incompatible `.litertlm` file or an x86 emulator. Use a real arm64 device.
-- **OOM** — pick a smaller-quant `.litertlm` variant or fall back to CPU backend.
-- **GPU backend fails to load OpenCL** — make sure the `<uses-native-library>` entries from [AndroidManifest.xml](modules/gemma-llm/android/src/main/AndroidManifest.xml) are merged into the final app manifest (they should be by default).
+The build-time Packs pipeline (training, quantization, packaging) is documented in [`README_backend.md`](README_backend.md).
