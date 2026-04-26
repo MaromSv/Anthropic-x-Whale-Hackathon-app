@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -17,6 +18,10 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.example.emergency.offline.MbtilesServer
+import com.example.emergency.offline.OfflineAssets
+import com.example.emergency.offline.OfflineBootstrap
+import com.example.emergency.offline.OfflineRouter
 import com.mapbox.geojson.Feature
 import com.mapbox.geojson.LineString
 import com.mapbox.geojson.Point
@@ -53,13 +58,34 @@ fun LiveMiniMap(
     destination: MapDestination? = null,
 ) {
     val context = LocalContext.current
-    remember { Mapbox.getInstance(context, null, WellKnownTileServer.MapLibre) }
+    remember {
+        Mapbox.getInstance(context, null, WellKnownTileServer.MapLibre)
+        Mapbox.setConnected(true)
+    }
 
     var userLocation by remember { mutableStateOf(DAM_SQUARE) }
     var mapboxMap by remember { mutableStateOf<MapboxMap?>(null) }
     var routeSource by remember { mutableStateOf<GeoJsonSource?>(null) }
     var userSource by remember { mutableStateOf<GeoJsonSource?>(null) }
     var destSource by remember { mutableStateOf<GeoJsonSource?>(null) }
+
+    // Observe offline bootstrap for tile server + routing paths
+    val bootstrapStatus by OfflineBootstrap.state.collectAsState()
+    val offlinePaths: OfflineAssets.Paths? =
+        (bootstrapStatus as? OfflineBootstrap.Status.Ready)?.paths
+
+    val tileServer = remember(offlinePaths) {
+        offlinePaths?.let { MbtilesServer(it.mbtilesFile) }
+    }
+    DisposableEffect(tileServer) {
+        val server = tileServer
+        if (server != null) {
+            try { server.start() } catch (e: Exception) {
+                Log.e(MINI_TAG, "MBTiles server failed to start", e)
+            }
+        }
+        onDispose { server?.runCatching { stop() } }
+    }
 
     LaunchedEffect(Unit) {
         getUserLocation(context)?.let {
@@ -92,7 +118,8 @@ fun LiveMiniMap(
         }
     }
 
-    LaunchedEffect(mapView) {
+    LaunchedEffect(mapView, tileServer) {
+        val server = tileServer ?: return@LaunchedEffect
         mapView.getMapAsync { map ->
             mapboxMap = map
             map.uiSettings.apply {
@@ -105,7 +132,7 @@ fun LiveMiniMap(
                 .target(userLocation)
                 .zoom(13.5)
                 .build()
-            map.setStyle(Style.Builder().fromJson(PDOK_BRT_STYLE)) { style ->
+            map.setStyle(Style.Builder().fromJson(buildMiniOfflineStyle(server.tileUrlTemplate))) { style ->
                 try {
                     routeSource = addMiniRouteLayer(style)
                     destSource = addMiniDestinationLayer(style)
@@ -150,19 +177,22 @@ fun LiveMiniMap(
     // dashed line. We use the walking profile because the chat card is a
     // preview, not a planning tool — the user can pick a different mode after
     // tapping through to the full map.
-    LaunchedEffect(routeSource, userLocation, destination) {
+    LaunchedEffect(routeSource, userLocation, destination, offlinePaths) {
         val src = routeSource ?: return@LaunchedEffect
+        val paths = offlinePaths ?: return@LaunchedEffect
         if (destination == null) {
             src.setGeoJson(LineString.fromLngLats(emptyList()))
             return@LaunchedEffect
         }
-        val result = brouterRoute(
-            userLocation,
-            LatLng(destination.lat, destination.lon),
-            "trekking",
+        val result = OfflineRouter.route(
+            from = userLocation,
+            to = LatLng(destination.lat, destination.lon),
+            profileName = "trekking",
+            segmentsDir = paths.segmentsDir,
+            profilesDir = paths.profilesDir,
         )
         if (result != null && result.polyline.size > 1) {
-            val pts = result.polyline.map { Point.fromLngLat(it.longitude, it.latitude) }
+            val pts = result.polyline.map { pt -> Point.fromLngLat(pt.longitude, pt.latitude) }
             src.setGeoJson(LineString.fromLngLats(pts))
         }
     }
@@ -227,3 +257,21 @@ private fun addMiniRouteLayer(style: Style): GeoJsonSource {
     )
     return source
 }
+
+private fun buildMiniOfflineStyle(tileUrlTemplate: String): String = """
+{
+  "version": 8,
+  "sources": {
+    "nl-offline": {
+      "type": "raster",
+      "tiles": ["$tileUrlTemplate"],
+      "tileSize": 256,
+      "minzoom": 5,
+      "maxzoom": 13,
+      "attribution": "© Kadaster"
+    }
+  },
+  "layers": [
+    {"id": "nl-offline-layer", "type": "raster", "source": "nl-offline"}
+  ]
+}"""

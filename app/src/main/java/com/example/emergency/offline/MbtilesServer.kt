@@ -56,6 +56,7 @@ class MbtilesServer(
         get() = "http://127.0.0.1:$listeningPort/{z}/{x}/{y}.png"
 
     override fun serve(session: IHTTPSession): Response {
+        Log.d(TAG, "Request: ${session.uri}")
         val match = TILE_PATH.matchEntire(session.uri)
             ?: return newFixedLengthResponse(
                 Response.Status.NOT_FOUND, "text/plain", "bad path",
@@ -69,9 +70,13 @@ class MbtilesServer(
         val tmsY = (1 shl z) - 1 - xyzY
 
         val data = readTile(z, x, tmsY)
-            ?: return newFixedLengthResponse(
+        if (data == null) {
+            Log.w(TAG, "Tile MISS z=$z x=$x tmsY=$tmsY (xyzY=$xyzY)")
+            return newFixedLengthResponse(
                 Response.Status.NOT_FOUND, "image/png", "",
             )
+        }
+        Log.d(TAG, "Tile HIT z=$z x=$x tmsY=$tmsY size=${data.size}")
 
         return newFixedLengthResponse(
             Response.Status.OK,
