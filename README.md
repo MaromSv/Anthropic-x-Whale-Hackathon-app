@@ -9,7 +9,7 @@
 When people need help fast, the app keeps things simple: ask a question, get practical guidance, and instantly see nearby critical points on the map — all while staying fully usable offline.
 A minimal **Expo + React Native (Android)** chatbot that runs a quantized **Gemma 4 E2B-it** fully on-device via Google's official [LiteRT-LM](https://ai.google.dev/edge/litert/lm/android) Kotlin API (`com.google.ai.edge.litertlm:litertlm-android`).
 
-No API calls. No keys. The `.litertlm` model file lives on the phone and inference runs in-process.
+No API calls. No keys. The `.litertlm` model file is automatically downloaded to the device on first launch (no manual setup) and inference runs in-process.
 
 ---
 ## Installation
