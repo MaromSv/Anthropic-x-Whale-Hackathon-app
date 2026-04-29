@@ -1,4 +1,4 @@
-# Mark On-Device Emergency Copilot
+# Mar
 
 ![Status](https://img.shields.io/badge/status-hackathon-blue)
 ![Platform](https://img.shields.io/badge/platform-Android-3DDC84)
