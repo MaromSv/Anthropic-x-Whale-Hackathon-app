@@ -81,6 +81,13 @@ import com.example.emergency.offline.MbtilesServer
 import com.example.emergency.offline.OfflineAssets
 import com.example.emergency.offline.OfflineBootstrap
 import com.example.emergency.offline.OfflineRouter
+import com.example.emergency.offline.navigation.NavigationProfile
+import com.example.emergency.offline.pack.CatalogProvider
+import com.example.emergency.offline.pack.RegionPack
+import com.example.emergency.offline.pack.RegionStore
+import com.example.emergency.offline.routing.RouteOutcome
+import com.example.emergency.offline.routing.successOrNull
+import java.io.File
 import com.google.android.gms.location.LocationServices
 import com.mapbox.geojson.Feature
 import com.mapbox.geojson.FeatureCollection
@@ -140,10 +147,15 @@ internal data class RouteResult(
     val durationS: Double,
 )
 
-private enum class Mode(val brouterProfile: String, val label: String, val icon: ImageVector) {
-    Walk("trekking", "Walk", Icons.Default.DirectionsWalk),
-    Bike("fastbike", "Bike", Icons.Default.DirectionsBike),
-    Drive("car-fast", "Drive", Icons.Default.DirectionsCar),
+private enum class Mode(
+    val brouterProfile: String,
+    val label: String,
+    val icon: ImageVector,
+    val navProfile: NavigationProfile,
+) {
+    Walk("trekking", "Walk", Icons.Default.DirectionsWalk, NavigationProfile.Walking),
+    Bike("fastbike", "Bike", Icons.Default.DirectionsBike, NavigationProfile.Biking),
+    Drive("car-fast", "Drive", Icons.Default.DirectionsCar, NavigationProfile.Driving),
 }
 
 private fun categoryIcon(category: String): ImageVector = when (category) {
@@ -192,6 +204,8 @@ private fun categoryColor(category: String): Color = when (category) {
 fun InteractiveMap(
     modifier: Modifier = Modifier,
     initialDestination: MapDestination? = null,
+    onOpenRegions: () -> Unit = {},
+    onStartNavigation: (OfflineRouter.Result, NavigationProfile) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
 
@@ -203,6 +217,15 @@ fun InteractiveMap(
         Mapbox.setConnected(true)
     }
 
+    // Region pipeline (plan §6 / Step 6). RegionStore + CatalogProvider feed
+    // the multi-pack OfflineRouter so we can pre-flight routes against the
+    // installed-pack union and return typed outcomes for honest errors.
+    val regionStore = remember { RegionStore.get(context) }
+    val catalogProvider = remember { CatalogProvider.get(context) }
+    val installedPacks: List<RegionPack> by regionStore.state.collectAsState()
+    val catalog by catalogProvider.catalog.collectAsState()
+    val activeRoot = remember { File(context.filesDir, "regions/_active") }
+
     var mode by remember { mutableStateOf(Mode.Walk) }
     var selectedPoi by remember {
         mutableStateOf<Poi?>(
@@ -210,6 +233,7 @@ fun InteractiveMap(
         )
     }
     var routeResult by remember { mutableStateOf<RouteResult?>(null) }
+    var routeOutcome by remember { mutableStateOf<RouteOutcome?>(null) }
     var routeLoading by remember { mutableStateOf(false) }
     var userLocation by remember { mutableStateOf(DAM_SQUARE) }
     var routeSource by remember { mutableStateOf<GeoJsonSource?>(null) }
@@ -233,9 +257,15 @@ fun InteractiveMap(
 
     // Tile server lives only while the composable is on screen. Re-keying on
     // [offlinePaths] means it spins up the moment staging completes, even if
-    // the user was already on the map screen.
+    // the user was already on the map screen. The server is only constructed
+    // when the bundled skeleton mbtiles actually exists on disk — the
+    // skeleton is opt-in (multi-hour build, see scripts/build-pack/skeleton-build.sh)
+    // so during dev iteration the map still renders, just without basemap
+    // tiles (style.json's background color shows through).
     val tileServer = remember(offlinePaths) {
-        offlinePaths?.let { MbtilesServer(it.mbtilesFile) }
+        offlinePaths
+            ?.takeIf { it.skeletonMbtiles.exists() }
+            ?.let { MbtilesServer(it.skeletonMbtiles) }
     }
     DisposableEffect(tileServer) {
         val server = tileServer
@@ -289,11 +319,12 @@ fun InteractiveMap(
     }
 
     LaunchedEffect(mapView, tileServer) {
-        // Wait for the local tile server before loading the style — otherwise
-        // MapLibre would synthesize tile URLs against a port that doesn't
-        // exist yet and cache the failure.
-        val server = tileServer ?: return@LaunchedEffect
-        Log.d(TAG, "getMapAsync requested (tile server=${server.tileUrlTemplate})")
+        // Always load a style so the user-location dot, route, and POI
+        // overlays render even when the skeleton mbtiles isn't built yet.
+        // When the tile server is up we use the full OpenMapTiles vector
+        // style; when not we fall back to a background-only style so the
+        // overlays still have a canvas.
+        Log.d(TAG, "getMapAsync requested (tile server=${tileServer?.tileUrlTemplate ?: "<none>"})")
         mapView.getMapAsync { map ->
             Log.d(TAG, "MapboxMap ready; setting style")
             mapboxMap = map
@@ -304,7 +335,10 @@ fun InteractiveMap(
                 .target(userLocation)
                 .zoom(14.0)
                 .build()
-            map.setStyle(Style.Builder().fromJson(buildOfflineStyle(server.tileUrlTemplate))) { style ->
+            val styleJson = tileServer
+                ?.let { buildOfflineStyle(context, it.tileUrlTemplate) }
+                ?: FALLBACK_BACKGROUND_STYLE
+            map.setStyle(Style.Builder().fromJson(styleJson)) { style ->
                 Log.d(TAG, "Style loaded; layers=${style.layers.size}, sources=${style.sources.size}")
                 try {
                     addPoiLayer(context, style)
@@ -381,12 +415,14 @@ fun InteractiveMap(
         }
     }
 
-    // Fetch route whenever (selectedPoi, mode, userLocation, offlinePaths)
-    // changes. Re-keying on offlinePaths means the first route after staging
-    // completes runs immediately, instead of stalling on stale null paths.
-    LaunchedEffect(selectedPoi, mode, userLocation, offlinePaths) {
+    // Fetch route whenever (selectedPoi, mode, userLocation, offlinePaths,
+    // installed pack set) changes. Re-keying on offlinePaths means the first
+    // route after staging completes runs immediately; re-keying on the pack
+    // list means a fresh install retriggers routing automatically.
+    LaunchedEffect(selectedPoi, mode, userLocation, offlinePaths, installedPacks, catalog) {
         val poi = selectedPoi ?: run {
             routeResult = null
+            routeOutcome = null
             routeSource?.setGeoJson(FeatureCollection.fromFeatures(emptyArray()))
             return@LaunchedEffect
         }
@@ -397,25 +433,29 @@ fun InteractiveMap(
             return@LaunchedEffect
         }
         routeLoading = true
-        val result = OfflineRouter.route(
+        val outcome = OfflineRouter.route(
             from = userLocation,
             to = LatLng(poi.lat, poi.lon),
             profileName = mode.brouterProfile,
-            segmentsDir = paths.segmentsDir,
             profilesDir = paths.profilesDir,
+            installedPacks = installedPacks,
+            catalog = catalog.packs,
+            activeRoot = activeRoot,
         )
         routeLoading = false
-        if (result != null && result.polyline.size > 1) {
+        routeOutcome = outcome
+        if (outcome is RouteOutcome.Success && outcome.result.polyline.size > 1) {
             routeResult = RouteResult(
-                polyline = result.polyline,
-                distanceM = result.distanceM,
-                durationS = result.durationS,
+                polyline = outcome.result.polyline,
+                distanceM = outcome.result.distanceM,
+                durationS = outcome.result.durationS,
             )
-            val pts = result.polyline.map { Point.fromLngLat(it.longitude, it.latitude) }
+            val pts = outcome.result.polyline.map { Point.fromLngLat(it.longitude, it.latitude) }
             routeSource?.setGeoJson(LineString.fromLngLats(pts))
         } else {
             routeResult = null
-            Log.e(TAG, "Routing failed for $poi via ${mode.brouterProfile}")
+            routeSource?.setGeoJson(FeatureCollection.fromFeatures(emptyArray()))
+            Log.w(TAG, "Routing did not produce a polyline: $outcome")
         }
     }
 
@@ -439,9 +479,16 @@ fun InteractiveMap(
             RouteInfoCard(
                 poi = selectedPoi,
                 route = routeResult,
+                outcome = routeOutcome,
                 mode = mode,
                 loading = routeLoading,
                 onDismiss = { selectedPoi = null },
+                onOpenRegions = onOpenRegions,
+                onStart = {
+                    routeOutcome?.successOrNull()?.let { result ->
+                        onStartNavigation(result, mode.navProfile)
+                    }
+                },
                 modifier = Modifier
                     .padding(16.dp)
                     .padding(bottom = 24.dp),
@@ -571,16 +618,21 @@ private fun ModeSelector(
 private fun RouteInfoCard(
     poi: Poi?,
     route: RouteResult?,
+    outcome: RouteOutcome?,
     mode: Mode,
     loading: Boolean,
     onDismiss: () -> Unit,
+    onOpenRegions: () -> Unit,
+    onStart: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     poi ?: return
     val colors = EmergencyTheme.colors
     val typography = EmergencyTheme.typography
+    val showGetMaps = outcome is RouteOutcome.OutsideDownloadedRegion
+    val showStart = route != null && outcome is RouteOutcome.Success
 
-    Box(
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(EmergencyShapes.hero)
@@ -635,6 +687,13 @@ private fun RouteInfoCard(
                         style = typography.helper,
                         color = colors.textDim,
                     )
+                    outcome != null -> Text(
+                        text = outcome.userMessage(),
+                        style = typography.helper,
+                        color = if (outcome is RouteOutcome.OutsideDownloadedRegion)
+                            colors.textDim else colors.danger,
+                        maxLines = 3,
+                    )
                     else -> Text(
                         text = "Routing failed",
                         style = typography.helper,
@@ -647,6 +706,42 @@ private fun RouteInfoCard(
                     Icons.Default.Close,
                     contentDescription = "Close",
                     tint = colors.textFaint,
+                )
+            }
+        }
+        if (showGetMaps) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
+                    .clip(EmergencyShapes.full)
+                    .background(colors.text)
+                    .clickable(onClick = onOpenRegions)
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "Open map regions",
+                    style = typography.listItem.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium),
+                    color = colors.bg,
+                )
+            }
+        }
+        if (showStart) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
+                    .clip(EmergencyShapes.full)
+                    .background(colors.text)
+                    .clickable(onClick = onStart)
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "Start navigation",
+                    style = typography.listItem.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium),
+                    color = colors.bg,
                 )
             }
         }
@@ -906,22 +1001,28 @@ internal suspend fun getUserLocation(context: Context): LatLng? {
 
 // MapLibre 10.x doesn't ship an mbtiles:// scheme handler, so the offline
 // tile pack is served by [MbtilesServer] over loopback HTTP. The port is
-// OS-assigned at runtime, hence the URL has to be threaded into the style
-// JSON instead of being a constant.
-private fun buildOfflineStyle(tileUrlTemplate: String): String = """
+// OS-assigned at runtime, so we read the bundled OpenMapTiles vector style
+// from assets and patch the placeholder tile URL with the live server URL
+// before handing it to MapLibre.
+private const val STYLE_ASSET_PATH = "bundled/style.json"
+private const val TILE_URL_PLACEHOLDER = "{TILE_URL_TEMPLATE}"
+
+private fun buildOfflineStyle(context: Context, tileUrlTemplate: String): String {
+    val template = context.assets.open(STYLE_ASSET_PATH).bufferedReader().use { it.readText() }
+    return template.replace(TILE_URL_PLACEHOLDER, tileUrlTemplate)
+}
+
+// Background-only fallback used while the bundled skeleton mbtiles is
+// missing (e.g. during dev iteration before scripts/build-pack/skeleton-build.sh
+// has been run). MapLibre still needs *some* style to render the user-location
+// dot, route polyline and POI overlays; this gives those layers a canvas
+// without trying to load tiles from a non-existent server.
+private const val FALLBACK_BACKGROUND_STYLE = """
 {
   "version": 8,
-  "sources": {
-    "nl-offline": {
-      "type": "raster",
-      "tiles": ["$tileUrlTemplate"],
-      "tileSize": 256,
-      "minzoom": 5,
-      "maxzoom": 13,
-      "attribution": "© Kadaster"
-    }
-  },
+  "sources": {},
   "layers": [
-    {"id": "nl-offline-layer", "type": "raster", "source": "nl-offline"}
+    {"id": "background", "type": "background", "paint": {"background-color": "#f3f1ec"}}
   ]
-}"""
+}
+"""

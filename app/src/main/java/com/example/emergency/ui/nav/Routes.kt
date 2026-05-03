@@ -25,6 +25,13 @@ sealed class Route(val path: String) {
     data object GetOut : Route("get_out")
     data object Settings : Route("settings")
     data object CprWalkthrough : Route("cpr_walkthrough")
+    // Map-region picker + storage manager (plan §8 step 5). Distinct from
+    // DataPacks, which is the medical/first-aid content store.
+    data object Regions : Route("regions")
+    // Active turn-by-turn navigation (plan §8 step 7.5). Reads the route
+    // payload from PendingNavigation since polyline + steps don't fit a
+    // navigation argument string.
+    data object Navigation : Route("navigation")
 }
 
 fun DrawerItemId.toRoute(): Route = when (this) {

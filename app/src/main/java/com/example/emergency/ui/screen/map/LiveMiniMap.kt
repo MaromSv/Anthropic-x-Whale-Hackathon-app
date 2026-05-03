@@ -22,6 +22,10 @@ import com.example.emergency.offline.MbtilesServer
 import com.example.emergency.offline.OfflineAssets
 import com.example.emergency.offline.OfflineBootstrap
 import com.example.emergency.offline.OfflineRouter
+import com.example.emergency.offline.pack.CatalogProvider
+import com.example.emergency.offline.pack.RegionStore
+import com.example.emergency.offline.routing.RouteOutcome
+import java.io.File
 import com.mapbox.geojson.Feature
 import com.mapbox.geojson.LineString
 import com.mapbox.geojson.Point
@@ -73,9 +77,16 @@ fun LiveMiniMap(
     val bootstrapStatus by OfflineBootstrap.state.collectAsState()
     val offlinePaths: OfflineAssets.Paths? =
         (bootstrapStatus as? OfflineBootstrap.Status.Ready)?.paths
+    val regionStore = remember { RegionStore.get(context) }
+    val catalogProvider = remember { CatalogProvider.get(context) }
+    val installedPacks by regionStore.state.collectAsState()
+    val catalog by catalogProvider.catalog.collectAsState()
+    val activeRoot = remember { File(context.filesDir, "regions/_active") }
 
     val tileServer = remember(offlinePaths) {
-        offlinePaths?.let { MbtilesServer(it.mbtilesFile) }
+        offlinePaths
+            ?.takeIf { it.skeletonMbtiles.exists() }
+            ?.let { MbtilesServer(it.skeletonMbtiles) }
     }
     DisposableEffect(tileServer) {
         val server = tileServer
@@ -119,7 +130,6 @@ fun LiveMiniMap(
     }
 
     LaunchedEffect(mapView, tileServer) {
-        val server = tileServer ?: return@LaunchedEffect
         mapView.getMapAsync { map ->
             mapboxMap = map
             map.uiSettings.apply {
@@ -132,7 +142,10 @@ fun LiveMiniMap(
                 .target(userLocation)
                 .zoom(13.5)
                 .build()
-            map.setStyle(Style.Builder().fromJson(buildMiniOfflineStyle(server.tileUrlTemplate))) { style ->
+            val styleJson = tileServer
+                ?.let { buildMiniOfflineStyle(context, it.tileUrlTemplate) }
+                ?: MINI_FALLBACK_BACKGROUND_STYLE
+            map.setStyle(Style.Builder().fromJson(styleJson)) { style ->
                 try {
                     routeSource = addMiniRouteLayer(style)
                     destSource = addMiniDestinationLayer(style)
@@ -177,23 +190,31 @@ fun LiveMiniMap(
     // dashed line. We use the walking profile because the chat card is a
     // preview, not a planning tool — the user can pick a different mode after
     // tapping through to the full map.
-    LaunchedEffect(routeSource, userLocation, destination, offlinePaths) {
+    LaunchedEffect(routeSource, userLocation, destination, offlinePaths, installedPacks, catalog) {
         val src = routeSource ?: return@LaunchedEffect
         val paths = offlinePaths ?: return@LaunchedEffect
         if (destination == null) {
             src.setGeoJson(LineString.fromLngLats(emptyList()))
             return@LaunchedEffect
         }
-        val result = OfflineRouter.route(
+        // Mini-map silently hides the polyline on every non-Success outcome —
+        // the chat bubble that hosts it has its own (terser) "tap to open
+        // map for details" affordance, so we don't need to surface the
+        // typed reason here.
+        val outcome = OfflineRouter.route(
             from = userLocation,
             to = LatLng(destination.lat, destination.lon),
             profileName = "trekking",
-            segmentsDir = paths.segmentsDir,
             profilesDir = paths.profilesDir,
+            installedPacks = installedPacks,
+            catalog = catalog.packs,
+            activeRoot = activeRoot,
         )
-        if (result != null && result.polyline.size > 1) {
-            val pts = result.polyline.map { pt -> Point.fromLngLat(pt.longitude, pt.latitude) }
+        if (outcome is RouteOutcome.Success && outcome.result.polyline.size > 1) {
+            val pts = outcome.result.polyline.map { pt -> Point.fromLngLat(pt.longitude, pt.latitude) }
             src.setGeoJson(LineString.fromLngLats(pts))
+        } else {
+            src.setGeoJson(LineString.fromLngLats(emptyList()))
         }
     }
 
@@ -258,20 +279,25 @@ private fun addMiniRouteLayer(style: Style): GeoJsonSource {
     return source
 }
 
-private fun buildMiniOfflineStyle(tileUrlTemplate: String): String = """
+// The mini-map shares the bundled OpenMapTiles vector style so it stays
+// in sync with the full map (same colour palette, same road hierarchy).
+// Placeholder substitution mirrors InteractiveMap.buildOfflineStyle.
+private const val MINI_STYLE_ASSET_PATH = "bundled/style.json"
+private const val MINI_TILE_URL_PLACEHOLDER = "{TILE_URL_TEMPLATE}"
+
+private fun buildMiniOfflineStyle(context: android.content.Context, tileUrlTemplate: String): String {
+    val template = context.assets.open(MINI_STYLE_ASSET_PATH).bufferedReader().use { it.readText() }
+    return template.replace(MINI_TILE_URL_PLACEHOLDER, tileUrlTemplate)
+}
+
+// Same fallback as InteractiveMap — used when the bundled skeleton mbtiles
+// hasn't been built yet so the route + dot still have a canvas to render on.
+private const val MINI_FALLBACK_BACKGROUND_STYLE = """
 {
   "version": 8,
-  "sources": {
-    "nl-offline": {
-      "type": "raster",
-      "tiles": ["$tileUrlTemplate"],
-      "tileSize": 256,
-      "minzoom": 5,
-      "maxzoom": 13,
-      "attribution": "© Kadaster"
-    }
-  },
+  "sources": {},
   "layers": [
-    {"id": "nl-offline-layer", "type": "raster", "source": "nl-offline"}
+    {"id": "background", "type": "background", "paint": {"background-color": "#f3f1ec"}}
   ]
-}"""
+}
+"""

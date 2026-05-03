@@ -43,6 +43,9 @@ import com.example.emergency.ui.screen.map.MapDestination
 import com.example.emergency.ui.screen.PersonalInfoScreen
 import com.example.emergency.ui.screen.SettingsScreen
 import com.example.emergency.ui.screen.cpr.CprWalkthroughScreen
+import com.example.emergency.offline.navigation.PendingNavigation
+import com.example.emergency.ui.screen.navigation.NavigationScreen
+import com.example.emergency.ui.screen.regions.RegionPickerScreen
 import com.example.emergency.ui.state.ChatMessage
 import com.example.emergency.ui.state.ChatRole
 import com.example.emergency.ui.state.ChatThreadUiState
@@ -393,7 +396,8 @@ fun AppNavHost() {
                                 toolCall = ToolCallInfo(
                                     toolName = toolCall.toolName,
                                     status = if (result.success) "success" else "error",
-                                    result = result.data.take(200) + if (result.data.length > 200) "..." else ""
+                                    result = result.data.take(200) + if (result.data.length > 200) "..." else "",
+                                    rawResult = result.data,
                                 )
                             )
                         }
@@ -533,8 +537,14 @@ fun AppNavHost() {
                     when (toolCall.toolName) {
                         "cpr_instructions" -> navController.navigate(Route.CprWalkthrough.path)
                         "abc_check" -> navController.navigate(Route.AbcCheck.path)
-                        "find_nearest" -> {
-                            val dest = parseFindNearestDestination(toolCall.result)
+                        // Both find_nearest and route_to return the same
+                        // {name, category, lat, lon} JSON shape so the chat
+                        // can hand them off to the map identically. Prefer
+                        // rawResult so route_to's longer JSON (with first_steps)
+                        // doesn't get cut at the 200-char chat-display limit.
+                        "find_nearest", "route_to" -> {
+                            val payload = toolCall.rawResult.ifBlank { toolCall.result }
+                            val dest = parseFindNearestDestination(payload)
                             val target = if (dest != null) {
                                 Route.Map.withDestination(dest.lat, dest.lon, dest.name, dest.category)
                             } else {
@@ -587,6 +597,11 @@ fun AppNavHost() {
             MapScreen(
                 state = SampleMapUiState,
                 onBack = { navController.popBackStack() },
+                onOpenRegions = { navController.navigate(Route.Regions.path) },
+                onStartNavigation = { result, profile ->
+                    PendingNavigation.current = PendingNavigation.Handoff(result, profile)
+                    navController.navigate(Route.Navigation.path)
+                },
                 initialDestination = dest,
             )
         }
@@ -617,6 +632,29 @@ fun AppNavHost() {
                 onBack = { navController.popBackStack() },
             )
         }
+        composable(Route.Regions.path) {
+            RegionPickerScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(Route.Navigation.path) {
+            // Read once on mount — PendingNavigation is single-slot and a
+            // re-entry without a fresh route shouldn't loop on the same
+            // (possibly stale) handoff. Re-keying remember on the handoff
+            // means a brand-new "Start" tap pushes a fresh engine even if
+            // the user backed out and tapped again.
+            val handoff = remember { PendingNavigation.take() }
+            if (handoff != null) {
+                NavigationScreen(
+                    initialRoute = handoff.route,
+                    profile = handoff.profile,
+                    onBack = { navController.popBackStack() },
+                )
+            } else {
+                // Process restart or direct deeplink — bounce back to map.
+                LaunchedEffect(Unit) { navController.popBackStack() }
+            }
+        }
         composable(Route.Settings.path) {
             SettingsScreen(
                 state = SampleSettingsUiState,
@@ -639,9 +677,10 @@ ${toolManager.getToolDescriptions()}
 2. User says someone is unresponsive/collapsed/passed out/fainted/won't wake up BUT has NOT confirmed they are not breathing → call `abc_check` first so they can assess Airway-Breathing-Circulation.
 3. After abc_check, if the user reports the person is NOT breathing → THEN call `cpr_instructions`.
 4. Medical question (wound, burn, bleeding, fracture, poisoning, choking, etc.) → call `search_medical_database` with the specific condition as query.
-5. User asks to find the nearest hospital, pharmacy, AED, police, fire station, shelter, doctor, water, toilet, metro, fuel, supermarket, ATM, phone, school, bunker → call `find_nearest` with the matching category.
+5. User asks **where** the nearest hospital/pharmacy/AED/etc. **is** (no movement implied) → call `find_nearest` with the matching category.
    Supported categories: hospital, doctor, first_aid, aed, pharmacy, police, fire, shelter, water, toilet, metro, parking_underground, bunker, fuel, supermarket, atm, phone, school, community, worship.
-6. User asks for their location or directions to a specific place → call `get_location`.
+6. User asks to **go to / get to / take me to / route to** a place — anything that implies movement — → call `route_to`. The destination param accepts either coords ('52.374,4.890') or one of the find_nearest categories. Optional profile param: walk (default), bike, drive.
+7. User asks for their current GPS coordinates → call `get_location`. (It no longer fakes turn-by-turn directions — use route_to for that.)
 
 **Output rules:**
 - Your FIRST response must be the `<tool_call>` block — nothing before it, nothing after it.
@@ -700,6 +739,29 @@ Assistant:
 <tool_call>
 find_nearest
 category=shelter
+<tool_call>
+
+User: "Take me to the nearest hospital"
+Assistant:
+<tool_call>
+route_to
+destination=hospital
+<tool_call>
+
+User: "Walk me to 52.374, 4.890"
+Assistant:
+<tool_call>
+route_to
+destination=52.374,4.890
+profile=walk
+<tool_call>
+
+User: "Drive me to the nearest pharmacy"
+Assistant:
+<tool_call>
+route_to
+destination=pharmacy
+profile=drive
 <tool_call>
 
 User: "[image of bleeding wound] how do I apply a tourniquet?"

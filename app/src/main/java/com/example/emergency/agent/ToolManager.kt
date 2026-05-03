@@ -6,6 +6,7 @@ import com.example.emergency.agent.tools.CprTool
 import com.example.emergency.agent.tools.FindNearestTool
 import com.example.emergency.agent.tools.GpsLocationTool
 import com.example.emergency.agent.tools.MedicalRagTool
+import com.example.emergency.agent.tools.RouteTool
 
 /**
  * Manages available tools and handles tool execution.
@@ -21,6 +22,7 @@ class ToolManager(context: Context) {
             CprTool().getTool(),
             AbcCheckTool().getTool(),
             FindNearestTool(context).getTool(),
+            RouteTool(context).getTool(),
         )
         
         tools = toolList.associateBy { it.name }
